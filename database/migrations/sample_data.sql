@@ -37,7 +37,10 @@ INSERT INTO `product_images` (`product_id`, `image_url`, `thumbnail_url`, `is_pr
 (1, '/images/products/iphone-15-pro-1.jpg', '/images/products/thumbs/iphone-15-pro-1.jpg', 1, 1),
 (1, '/images/products/iphone-15-pro-2.jpg', '/images/products/thumbs/iphone-15-pro-2.jpg', 0, 2),
 (2, '/images/products/samsung-s24-1.jpg', '/images/products/thumbs/samsung-s24-1.jpg', 1, 1),
-(3, '/images/products/macbook-pro-1.jpg', '/images/products/thumbs/macbook-pro-1.jpg', 1, 1);
+(3, '/images/products/macbook-pro-1.jpg', '/images/products/thumbs/macbook-pro-1.jpg', 1, 1),
+(4, '/images/products/dell-xps-1.jpg', '/images/products/thumbs/dell-xps-1.jpg', 1, 1),
+(5, '/images/products/mens-shirt-1.jpg', '/images/products/thumbs/mens-shirt-1.jpg', 1, 1),
+(6, '/images/products/womens-dress-1.jpg', '/images/products/thumbs/womens-dress-1.jpg', 1, 1);
 
 -- Insert sample addresses
 INSERT INTO `addresses` (`user_id`, `recipient_name`, `phone`, `province`, `city`, `district`, `address`, `postcode`, `is_default`) VALUES
