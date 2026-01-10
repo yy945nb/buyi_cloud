@@ -60,8 +60,9 @@ class SQLRefactor:
         
         # Pattern 2: ENGINE without AUTO_INCREMENT (standardize spacing)
         pattern2 = r'ENGINE=InnoDB\s+DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci(?! ROW_FORMAT| COMMENT| AUTO_INCREMENT)'
+        count2 = len(re.findall(pattern2, self.content))
         self.content = re.sub(pattern2, standard_engine, self.content)
-        self.statistics['patterns_replaced'] += len(re.findall(pattern2, self.content))
+        self.statistics['patterns_replaced'] += count2
     
     def normalize_timestamp_columns(self):
         """Standardize timestamp column definitions."""

@@ -35,10 +35,11 @@ def validate_sql_file(filename):
     
     # 2. Check for unclosed parentheses in CREATE TABLE statements
     print(f"\n2. Syntax Check:")
-    tables = re.findall(r'CREATE TABLE `([^`]+)`.*?ENGINE=InnoDB[^\n]+', content, re.DOTALL)
+    # Extract full CREATE TABLE blocks including the closing semicolon
+    table_blocks = re.findall(r'CREATE TABLE `([^`]+)`.*?;', content, re.DOTALL)
     
     syntax_errors = 0
-    for table_block in tables:
+    for table_block in table_blocks:
         # Simple check for balanced parentheses
         open_count = table_block.count('(')
         close_count = table_block.count(')')
@@ -48,7 +49,7 @@ def validate_sql_file(filename):
     if syntax_errors > 0:
         errors.append(f"Found {syntax_errors} tables with unbalanced parentheses")
     else:
-        print(f"   ✓ All {len(tables)} table definitions have balanced parentheses")
+        print(f"   ✓ All {len(table_blocks)} table definitions have balanced parentheses")
     
     # 3. Check for duplicate table names
     print(f"\n3. Duplicate Check:")

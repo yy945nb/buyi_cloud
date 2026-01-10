@@ -169,7 +169,8 @@ class TableBuilder:
         # Add columns
         column_lines = []
         for col in self.columns:
-            if not col.strip().startswith('`'):
+            # Ensure proper indentation (columns should start with 2 spaces if not already indented)
+            if col.strip() and not col.startswith('  '):
                 col = f"  {col}"
             column_lines.append(col)
         

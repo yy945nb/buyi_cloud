@@ -169,8 +169,15 @@ class TestRefactoringBenefits(unittest.TestCase):
         # Extract timestamp definitions from both tables
         import re
         
-        create_time_1 = re.search(r'`create_time`[^\n]+', table1).group(0)
-        create_time_2 = re.search(r'`create_time`[^\n]+', table2).group(0)
+        create_time_match_1 = re.search(r'`create_time`[^\n]+', table1)
+        create_time_match_2 = re.search(r'`create_time`[^\n]+', table2)
+        
+        # Verify matches found
+        self.assertIsNotNone(create_time_match_1, "create_time not found in table1")
+        self.assertIsNotNone(create_time_match_2, "create_time not found in table2")
+        
+        create_time_1 = create_time_match_1.group(0)
+        create_time_2 = create_time_match_2.group(0)
         
         # They should be identical (except for leading whitespace)
         self.assertEqual(create_time_1.strip(), create_time_2.strip())
@@ -191,11 +198,18 @@ class TestRefactoringBenefits(unittest.TestCase):
         
         # Verify all have consistent timestamp columns
         import re
-        timestamp_patterns = [re.search(r'`create_time`[^\n]+', t).group(0) 
-                             for t in tables]
+        timestamp_patterns = []
+        for t in tables:
+            match = re.search(r'`create_time`[^\n]+', t)
+            if match:
+                timestamp_patterns.append(match.group(0))
+        
+        # Verify we found patterns for all tables
+        self.assertEqual(len(timestamp_patterns), 5, "Should find create_time in all 5 tables")
         
         # All should be identical
-        self.assertEqual(len(set([p.strip() for p in timestamp_patterns])), 1)
+        self.assertEqual(len(set([p.strip() for p in timestamp_patterns])), 1,
+                        "All create_time definitions should be identical")
 
 
 def run_tests():
