@@ -453,7 +453,7 @@ CREATE TABLE `amf_jh_purchase_goods` (
   UNIQUE KEY `uk_warehouse_sku` (`warehouse_sku`) COMMENT '仓库SKU唯一，避免重复商品',
   KEY `idx_user_key` (`user_key`) COMMENT '用户标识索引，用于筛选用户名下商品',
   KEY `idx_p_status` (`p_status`) COMMENT '商品状态索引，用于筛选不同状态商品',
-  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引，用于按时间范围查询'
+  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='仓库采购商品表（对应warehouse/list接口数据结构）';
 
 -- ----------------------------
@@ -505,7 +505,7 @@ CREATE TABLE `amf_jh_sell_goods` (
   `query_type` varchar(32) DEFAULT NULL COMMENT '查询类型（可为空）',
   PRIMARY KEY (`id`) COMMENT '主键索引',
   KEY `idx_shop_id` (`shop_id`) COMMENT '店铺ID索引（优化店铺维度查询）',
-  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引（优化时间范围查询）',
+  KEY `idx_create_time` (`create_time`) COMMENT '创建时间索引',
   KEY `idx_company_sku` (`company_sku`) COMMENT '公司SKU索引（优化内部SKU查询）',
   KEY `uk_sell_sku` (`sell_sku`) USING BTREE COMMENT '销售SKU索引'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='销售商品主表';
