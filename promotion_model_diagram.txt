@@ -1,0 +1,212 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    促销模型实体关系图 (ER Diagram)                           │
+│                    Promotion Model Entity Relationship                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│     promotion_activity (促销活动)    │
+│──────────────────────────────────────│
+│ PK: id (bigint)                      │
+│ UK: activity_no (varchar)            │
+│──────────────────────────────────────│
+│ activity_name (varchar)              │
+│ activity_type (varchar)              │
+│   - DISCOUNT (折扣)                  │
+│   - FULL_REDUCTION (满减)            │
+│   - FULL_GIFT (满赠)                 │
+│   - COUPON (优惠券)                  │
+│   - FLASH_SALE (限时抢购)            │
+│   - BUNDLE (组合套餐)                │
+│ status (tinyint)                     │
+│ start_time / end_time (datetime)     │
+│ priority (int)                       │
+│ can_stack (tinyint)                  │
+│ total_budget (decimal)               │
+│ used_budget (decimal)                │
+│ per_user_limit_count (int)           │
+└──────────────────────────────────────┘
+         │                      │
+         │ 1                    │ 1
+         │                      │
+         ▼ *                    ▼ *
+┌──────────────────────┐   ┌──────────────────────────┐
+│  promotion_rule      │   │  promotion_product       │
+│  (促销规则)          │   │  (促销商品)              │
+│──────────────────────│   │──────────────────────────│
+│ PK: id               │   │ PK: id                   │
+│ FK: activity_id      │   │ FK: activity_id          │
+│──────────────────────│   │──────────────────────────│
+│ rule_type            │   │ product_scope_type       │
+│ condition_type       │   │   - ALL (全部)           │
+│ condition_value      │   │   - CATEGORY (分类)      │
+│ discount_type        │   │   - SKU (指定SKU)        │
+│ discount_value       │   │   - EXCLUDE (排除)       │
+│ max_discount_amount  │   │ company_sku              │
+│ gift_product_sku     │   │ warehouse_sku            │
+│ step_rule            │   │ sell_sku                 │
+└──────────────────────┘   │ original_price           │
+                           │ promotion_price           │
+                           │ stock_quantity            │
+                           │ sold_quantity             │
+                           │ limit_per_user            │
+                           └──────────────────────────┘
+
+┌──────────────────────────────────────┐
+│     promotion_activity (续)          │
+└──────────────────────────────────────┘
+         │ 1
+         │
+         ▼ *
+┌──────────────────────────────────────┐
+│    promotion_coupon (优惠券)         │
+│──────────────────────────────────────│
+│ PK: id (bigint)                      │
+│ FK: activity_id                      │
+│ UK: coupon_code (varchar)            │
+│──────────────────────────────────────│
+│ coupon_name (varchar)                │
+│ coupon_type (varchar)                │
+│   - UNIVERSAL (通用券)               │
+│   - PRODUCT (商品券)                 │
+│   - SHIPPING (运费券)                │
+│   - CASH (代金券)                    │
+│ discount_type (varchar)              │
+│ discount_value (decimal)             │
+│ min_order_amount (decimal)           │
+│ max_discount_amount (decimal)        │
+│ total_quantity (int)                 │
+│ issued_quantity (int)                │
+│ used_quantity (int)                  │
+│ per_user_limit (int)                 │
+│ valid_days (int)                     │
+└──────────────────────────────────────┘
+         │ 1
+         │
+         ▼ *
+┌──────────────────────────────────────┐
+│  promotion_user_coupon (用户优惠券)  │
+│──────────────────────────────────────│
+│ PK: id (bigint)                      │
+│ FK: coupon_id                        │
+│──────────────────────────────────────│
+│ user_id (bigint)                     │
+│ user_key (varchar)                   │
+│ receive_time (datetime)              │
+│ valid_start_time (datetime)          │
+│ valid_end_time (datetime)            │
+│ use_status (tinyint)                 │
+│   - 0: 未使用                        │
+│   - 1: 已使用                        │
+│   - 2: 已过期                        │
+│   - 3: 已作废                        │
+│ use_time (datetime)                  │
+│ order_no (varchar)                   │
+│ discount_amount (decimal)            │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│     promotion_activity (续)          │
+└──────────────────────────────────────┘
+         │ 1
+         │
+         ▼ *
+┌──────────────────────────────────────┐
+│  promotion_usage_record (使用记录)   │
+│──────────────────────────────────────│
+│ PK: id (bigint)                      │
+│ FK: activity_id                      │
+│──────────────────────────────────────│
+│ user_id (bigint)                     │
+│ user_key (varchar)                   │
+│ order_no (varchar)                   │
+│ order_item_id (varchar)              │
+│ usage_type (varchar)                 │
+│   - ORDER (订单级)                   │
+│   - PRODUCT (商品级)                 │
+│   - SHIPPING (运费)                  │
+│ product_sku (varchar)                │
+│ product_name (varchar)               │
+│ quantity (int)                       │
+│ original_amount (decimal)            │
+│ discount_amount (decimal)            │
+│ final_amount (decimal)               │
+│ coupon_code (varchar)                │
+│ use_time (datetime)                  │
+│ status (tinyint)                     │
+│ refund_amount (decimal)              │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│     promotion_activity (续)          │
+└──────────────────────────────────────┘
+         │ 1
+         │
+         ▼ *
+┌──────────────────────────────────────┐
+│  promotion_statistics (促销统计)     │
+│──────────────────────────────────────│
+│ PK: id (bigint)                      │
+│ FK: activity_id                      │
+│ UK: (activity_id, stat_date)         │
+│──────────────────────────────────────│
+│ stat_date (date)                     │
+│ order_count (int)                    │
+│ order_amount (decimal)               │
+│ discount_amount (decimal)            │
+│ participant_count (int)              │
+│ product_quantity (int)               │
+│ new_user_count (int)                 │
+│ conversion_rate (decimal)            │
+│ avg_order_amount (decimal)           │
+└──────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              关系说明 (Relationships)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. promotion_activity → promotion_rule           (1:N)                      │
+│    一个促销活动可以有多条促销规则                                            │
+│                                                                              │
+│ 2. promotion_activity → promotion_product        (1:N)                      │
+│    一个促销活动可以关联多个商品                                              │
+│                                                                              │
+│ 3. promotion_activity → promotion_coupon         (1:N)                      │
+│    一个促销活动可以发布多种优惠券                                            │
+│                                                                              │
+│ 4. promotion_coupon → promotion_user_coupon      (1:N)                      │
+│    一种优惠券可以被多个用户领取                                              │
+│                                                                              │
+│ 5. promotion_activity → promotion_usage_record   (1:N)                      │
+│    一个促销活动会产生多条使用记录                                            │
+│                                                                              │
+│ 6. promotion_activity → promotion_statistics     (1:N)                      │
+│    一个促销活动每天生成一条统计记录                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          数据流向 (Data Flow)                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. 创建活动流程:                                                            │
+│     promotion_activity → promotion_rule → promotion_product                 │
+│                       ↘ promotion_coupon                                    │
+│                                                                              │
+│  2. 用户使用流程:                                                            │
+│     User → promotion_coupon → promotion_user_coupon                         │
+│          → Order → promotion_usage_record                                   │
+│                                                                              │
+│  3. 统计分析流程:                                                            │
+│     promotion_usage_record → promotion_statistics (Daily Job)               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            索引设计 (Index Design)                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  高频查询场景:                                                               │
+│  • 查询当前有效活动: idx_status_time (status, start_time, end_time)         │
+│  • 查询商品促销: idx_company_sku, idx_warehouse_sku                          │
+│  • 查询用户优惠券: idx_user_id, idx_use_status                               │
+│  • 统计分析: idx_activity_id, idx_use_time                                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
