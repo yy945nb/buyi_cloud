@@ -14058,7 +14058,7 @@ BEGIN
     DECLARE v_mapped_lines INT DEFAULT 0;
     DECLARE v_unmapped_sku_lines INT DEFAULT 0;
     DECLARE v_unmapped_shop_lines INT DEFAULT 0;
-    DECLARE v_inserted_records INT DEFAULT 0;
+    DECLARE v_affected_records INT DEFAULT 0;
     DECLARE v_updated_records INT DEFAULT 0;
     DECLARE v_status VARCHAR(20) DEFAULT 'SUCCESS';
     DECLARE v_error_message TEXT DEFAULT NULL;
@@ -14115,7 +14115,7 @@ BEGIN
         mapping_status
     )
     SELECT 
-        COALESCE(cs.company_id, p_company_id) AS company_id,
+        cs.company_id AS company_id,
         cs.id AS cos_shop_id,
         cgs.id AS cos_sku_id,
         cgs.spu_id AS spu_id,
@@ -14262,7 +14262,7 @@ BEGIN
     SELECT 
         -- 对于已存在记录，保留原ID；新记录生成新ID
         COALESCE(
-            MAX(cist.id),
+            cist.id,
             generate_snowflake_id()
         ) AS id,
         t.company_id,
@@ -14290,28 +14290,17 @@ BEGIN
         AND cist.deleted = 0
     WHERE t.mapping_status = 'OK'
         AND t.cos_shop_id IS NOT NULL
-        AND t.cos_sku_id IS NOT NULL
-    GROUP BY 
-        t.company_id,
-        t.cos_shop_id,
-        t.spu_id,
-        t.cos_sku_id,
-        t.sku_code,
-        t.container_no,
-        t.ship_qty,
-        t.receive_qty,
-        t.shipment_date,
-        t.shipment_status;
+        AND t.cos_sku_id IS NOT NULL;
     
-    -- 统计插入和更新的记录数
+    -- 统计受影响的记录数
     -- 注意：REPLACE INTO的ROW_COUNT()如果更新则返回2，如果插入则返回1
-    SET v_inserted_records = ROW_COUNT();
-    SET v_updated_records = 0; -- REPLACE INTO不区分插入和更新
+    SET v_affected_records = ROW_COUNT();
+    SET v_updated_records = 0; -- REPLACE INTO不区分插入和更新，统一记录在affected_records
     
     -- 更新日志记录
     UPDATE cos_sync_jh_intransit_log
     SET 
-        inserted_records = v_inserted_records,
+        inserted_records = v_affected_records,
         updated_records = v_updated_records,
         status = v_status,
         error_message = v_error_message
@@ -14328,7 +14317,7 @@ BEGIN
         v_mapped_lines AS mapped_lines,
         v_unmapped_sku_lines AS unmapped_sku_lines,
         v_unmapped_shop_lines AS unmapped_shop_lines,
-        v_inserted_records AS affected_records,
+        v_affected_records AS affected_records,
         v_error_message AS error_message;
         
 END
