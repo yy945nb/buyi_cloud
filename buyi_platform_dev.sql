@@ -3059,8 +3059,30 @@ CREATE TABLE `cos_goods_sku_intransit_stock` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` bigint NOT NULL DEFAULT '0' COMMENT '删除标记：0=未删除，大于0：删除',
-  PRIMARY KEY (`id`) USING BTREE
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_intransit_stock` (`company_id`,`shop_id`,`sku_id`,`external_id`,`shipment_date`,`deleted`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='渠道sku在途库存表';
+
+-- ----------------------------
+-- Table structure for cos_intransit_stock_sync_log
+-- ----------------------------
+DROP TABLE IF EXISTS `cos_intransit_stock_sync_log`;
+CREATE TABLE `cos_intransit_stock_sync_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `jh_shop_id` bigint DEFAULT NULL COMMENT 'JH店铺ID',
+  `jh_shop_show_name` varchar(255) DEFAULT NULL COMMENT 'JH店铺展示名称',
+  `warehouse_sku` varchar(64) DEFAULT NULL COMMENT '仓库SKU编码',
+  `container_no` varchar(64) DEFAULT NULL COMMENT '集装箱/批次编号',
+  `ship_qty` int DEFAULT NULL COMMENT '发货数量',
+  `receive_qty` int DEFAULT NULL COMMENT '收货数量',
+  `reason_code` varchar(50) NOT NULL COMMENT '原因代码(SHOP_NOT_MAPPED, SKU_NOT_MAPPED, SKU_MULTI_MATCH)',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注信息',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_reason_code` (`reason_code`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='COS在途库存同步日志表';
 
 -- ----------------------------
 -- Table structure for cos_goods_sku_sale
@@ -13951,6 +13973,324 @@ CREATE TRIGGER `trg_amf_lx_shipment_after_insert` AFTER INSERT ON `amf_lx_shipme
 --             END IF;
 --         END IF;
     END IF;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_sync_jh_intransit_stock_to_cos
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_sync_jh_intransit_stock_to_cos`;
+delimiter ;;
+CREATE PROCEDURE `sp_sync_jh_intransit_stock_to_cos`(
+    IN p_company_id BIGINT,
+    IN p_days INT
+)
+BEGIN
+    DECLARE v_error_msg VARCHAR(500);
+    
+    -- 错误处理：记录错误并回滚
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = v_error_msg;
+    END;
+    
+    START TRANSACTION;
+    
+    -- 临时表：存储待同步的JH发货明细（仅在途数据）
+    DROP TEMPORARY TABLE IF EXISTS tmp_jh_intransit;
+    CREATE TEMPORARY TABLE tmp_jh_intransit (
+        shipment_sku_id BIGINT,
+        jh_shop_id BIGINT,
+        jh_shop_show_name VARCHAR(255),
+        warehouse_sku VARCHAR(64),
+        container_no VARCHAR(64),
+        ship_qty INT,
+        receive_qty INT,
+        intransit_qty INT,
+        shipment_date DATE,
+        INDEX idx_shop (jh_shop_id),
+        INDEX idx_sku (warehouse_sku)
+    ) ENGINE=MEMORY;
+    
+    -- 从JH发货明细中筛选在途数据（ship_qty > receive_qty）
+    INSERT INTO tmp_jh_intransit (
+        shipment_sku_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        intransit_qty,
+        shipment_date
+    )
+    SELECT 
+        sku.id,
+        sku.shop_id,
+        sku.shop_show_name,
+        sku.warehouse_sku,
+        sku.container_no,
+        sku.ship_qty,
+        IFNULL(sku.receive_qty, 0),
+        sku.ship_qty - IFNULL(sku.receive_qty, 0) AS intransit_qty,
+        sh.shipment_date
+    FROM amf_jh_shipment_sku sku
+    INNER JOIN amf_jh_shipment sh ON sku.property_shipment_id = sh.id
+    WHERE sh.update_time >= DATE_SUB(NOW(), INTERVAL p_days DAY)
+      AND sku.ship_qty > IFNULL(sku.receive_qty, 0);
+    
+    -- 临时表：存储映射结果
+    DROP TEMPORARY TABLE IF EXISTS tmp_mapped_data;
+    CREATE TEMPORARY TABLE tmp_mapped_data (
+        shipment_sku_id BIGINT,
+        cos_shop_id BIGINT,
+        cos_sku_id BIGINT,
+        cos_spu_id BIGINT,
+        cos_sku_code VARCHAR(50),
+        warehouse_sku VARCHAR(64),
+        container_no VARCHAR(64),
+        ship_qty INT,
+        receive_qty INT,
+        intransit_qty INT,
+        shipment_date DATE,
+        jh_shop_id BIGINT,
+        jh_shop_show_name VARCHAR(255),
+        map_status VARCHAR(20), -- SUCCESS, SHOP_FAIL, SKU_FAIL, SKU_MULTI
+        INDEX idx_status (map_status)
+    ) ENGINE=MEMORY;
+    
+    -- 第一步：Shop映射
+    -- 通过platform_shop_id和channel_name双重验证
+    INSERT INTO tmp_mapped_data (
+        shipment_sku_id,
+        cos_shop_id,
+        cos_sku_id,
+        cos_spu_id,
+        cos_sku_code,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        intransit_qty,
+        shipment_date,
+        jh_shop_id,
+        jh_shop_show_name,
+        map_status
+    )
+    SELECT 
+        jh.shipment_sku_id,
+        cs.id AS cos_shop_id,
+        NULL,
+        NULL,
+        NULL,
+        jh.warehouse_sku,
+        jh.container_no,
+        jh.ship_qty,
+        jh.receive_qty,
+        jh.intransit_qty,
+        jh.shipment_date,
+        jh.jh_shop_id,
+        jh.jh_shop_show_name,
+        CASE 
+            WHEN cs.id IS NULL THEN 'SHOP_FAIL'
+            ELSE 'SHOP_OK'
+        END AS map_status
+    FROM tmp_jh_intransit jh
+    LEFT JOIN amf_jh_shop jhs ON jh.jh_shop_id = jhs.id
+    LEFT JOIN cos_shop cs ON cs.platform_shop_id = jh.jh_shop_id 
+        AND cs.channel_name = jhs.shop_show_name
+        AND cs.company_id = p_company_id
+        AND cs.deleted = 0;
+    
+    -- 记录Shop映射失败的日志
+    INSERT INTO cos_intransit_stock_sync_log (
+        company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        reason_code,
+        remark
+    )
+    SELECT 
+        p_company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        'SHOP_NOT_MAPPED',
+        CONCAT('JH shop_id=', jh_shop_id, ', shop_show_name=', jh_shop_show_name, ' not found in cos_shop')
+    FROM tmp_mapped_data
+    WHERE map_status = 'SHOP_FAIL';
+    
+    -- 第二步：SKU映射（仅针对Shop映射成功的记录）
+    -- 优先匹配supplier_sku_code，其次sku_code
+    -- 先尝试supplier_sku_code匹配
+    UPDATE tmp_mapped_data tm
+    INNER JOIN (
+        SELECT 
+            tm2.shipment_sku_id,
+            MAX(gs.id) AS sku_id,  -- 使用MAX(id)作为确定性选择
+            MAX(gs.spu_id) AS spu_id,
+            MAX(gs.sku_code) AS sku_code,
+            COUNT(*) AS match_count
+        FROM tmp_mapped_data tm2
+        INNER JOIN cos_goods_sku gs ON gs.supplier_sku_code = tm2.warehouse_sku
+            AND gs.company_id = p_company_id
+            AND (gs.shop_id = tm2.cos_shop_id OR gs.shop_id IS NULL)
+            AND gs.is_delete = 0
+        WHERE tm2.map_status = 'SHOP_OK'
+        GROUP BY tm2.shipment_sku_id
+    ) sku_map ON tm.shipment_sku_id = sku_map.shipment_sku_id
+    SET 
+        tm.cos_sku_id = sku_map.sku_id,
+        tm.cos_spu_id = sku_map.spu_id,
+        tm.cos_sku_code = sku_map.sku_code,
+        tm.map_status = CASE 
+            WHEN sku_map.match_count > 1 THEN 'SKU_MULTI'
+            ELSE 'SUCCESS'
+        END
+    WHERE tm.map_status = 'SHOP_OK';
+    
+    -- 对未匹配的使用sku_code fallback
+    UPDATE tmp_mapped_data tm
+    INNER JOIN (
+        SELECT 
+            tm2.shipment_sku_id,
+            MAX(gs.id) AS sku_id,
+            MAX(gs.spu_id) AS spu_id,
+            MAX(gs.sku_code) AS sku_code,
+            COUNT(*) AS match_count
+        FROM tmp_mapped_data tm2
+        INNER JOIN cos_goods_sku gs ON gs.sku_code = tm2.warehouse_sku
+            AND gs.company_id = p_company_id
+            AND (gs.shop_id = tm2.cos_shop_id OR gs.shop_id IS NULL)
+            AND gs.is_delete = 0
+        WHERE tm2.map_status = 'SHOP_OK' 
+          AND tm2.cos_sku_id IS NULL
+        GROUP BY tm2.shipment_sku_id
+    ) sku_map ON tm.shipment_sku_id = sku_map.shipment_sku_id
+    SET 
+        tm.cos_sku_id = sku_map.sku_id,
+        tm.cos_spu_id = sku_map.spu_id,
+        tm.cos_sku_code = sku_map.sku_code,
+        tm.map_status = CASE 
+            WHEN sku_map.match_count > 1 THEN 'SKU_MULTI'
+            ELSE 'SUCCESS'
+        END
+    WHERE tm.map_status = 'SHOP_OK' AND tm.cos_sku_id IS NULL;
+    
+    -- 标记SKU映射失败
+    UPDATE tmp_mapped_data
+    SET map_status = 'SKU_FAIL'
+    WHERE map_status = 'SHOP_OK' AND cos_sku_id IS NULL;
+    
+    -- 记录SKU映射失败的日志
+    INSERT INTO cos_intransit_stock_sync_log (
+        company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        reason_code,
+        remark
+    )
+    SELECT 
+        p_company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        'SKU_NOT_MAPPED',
+        CONCAT('warehouse_sku=', warehouse_sku, ' not found in cos_goods_sku')
+    FROM tmp_mapped_data
+    WHERE map_status = 'SKU_FAIL';
+    
+    -- 记录SKU多匹配的日志（警告）
+    INSERT INTO cos_intransit_stock_sync_log (
+        company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        reason_code,
+        remark
+    )
+    SELECT 
+        p_company_id,
+        jh_shop_id,
+        jh_shop_show_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        'SKU_MULTI_MATCH',
+        CONCAT('warehouse_sku=', warehouse_sku, ' matched multiple cos_goods_sku records, using MAX(id)=', cos_sku_id)
+    FROM tmp_mapped_data
+    WHERE map_status = 'SKU_MULTI';
+    
+    -- 第三步：Upsert到目标表（仅SUCCESS和SKU_MULTI状态）
+    INSERT INTO cos_goods_sku_intransit_stock (
+        id,
+        company_id,
+        shop_id,
+        spu_id,
+        sku_id,
+        sku_code,
+        external_id,
+        ship_qty,
+        receive_qty,
+        shipment_date,
+        shipment_status,
+        create_time,
+        update_time,
+        deleted
+    )
+    SELECT 
+        generate_snowflake_id() AS id,
+        p_company_id,
+        cos_shop_id,
+        cos_spu_id,
+        cos_sku_id,
+        cos_sku_code,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date,
+        0 AS shipment_status,  -- 0=在途
+        NOW(),
+        NOW(),
+        0
+    FROM tmp_mapped_data
+    WHERE map_status IN ('SUCCESS', 'SKU_MULTI')
+    ON DUPLICATE KEY UPDATE
+        spu_id = VALUES(spu_id),
+        sku_code = VALUES(sku_code),
+        ship_qty = VALUES(ship_qty),
+        receive_qty = VALUES(receive_qty),
+        shipment_status = VALUES(shipment_status),
+        update_time = NOW();
+    
+    -- 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS tmp_jh_intransit;
+    DROP TEMPORARY TABLE IF EXISTS tmp_mapped_data;
+    
+    COMMIT;
+    
 END
 ;;
 delimiter ;
