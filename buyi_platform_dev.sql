@@ -14144,16 +14144,14 @@ BEGIN
         cgs.supplier_sku_code = jss.warehouse_sku 
         OR cgs.sku_code = jss.warehouse_sku
     )
-        AND (cs.id IS NULL OR cgs.shop_id = cs.id)
+        AND cgs.shop_id = cs.id
         AND cgs.is_delete = 0
-        AND (p_company_id IS NULL OR cgs.company_id = COALESCE(cs.company_id, p_company_id))
+        AND (p_company_id IS NULL OR cgs.company_id = cs.company_id)
     WHERE 
         -- 只同步在途数据：发货数量 > 收货数量
         jss.ship_qty > COALESCE(jss.receive_qty, 0)
         -- 回溯指定天数
-        AND js.shipment_date >= DATE_SUB(CURDATE(), INTERVAL p_days DAY)
-        -- 公司过滤（如果提供）
-        AND (p_company_id IS NULL OR cs.company_id = p_company_id OR cs.id IS NULL);
+        AND js.shipment_date >= DATE_SUB(CURDATE(), INTERVAL p_days DAY);
     
     -- 统计总行数
     SELECT COUNT(*) INTO v_total_lines FROM temp_jh_intransit;
@@ -14242,7 +14240,7 @@ BEGIN
     
     -- 步骤2: 同步到cos_goods_sku_intransit_stock（只处理成功映射的记录）
     -- 使用REPLACE INTO来实现upsert（先删除后插入）
-    -- 注意：由于有唯一索引uk_intransit_stock，相同的记录会被替换
+    -- 唯一索引uk_intransit_stock确保不会有重复记录
     REPLACE INTO cos_goods_sku_intransit_stock (
         id,
         company_id,
@@ -14262,15 +14260,9 @@ BEGIN
         deleted
     )
     SELECT 
-        IFNULL(
-            (SELECT id FROM cos_goods_sku_intransit_stock 
-             WHERE company_id = t.company_id 
-             AND shop_id = t.cos_shop_id 
-             AND sku_id = t.cos_sku_id 
-             AND external_id = t.container_no 
-             AND datasource_type = 'JH'
-             AND deleted = 0
-             LIMIT 1),
+        -- 对于已存在记录，保留原ID；新记录生成新ID
+        COALESCE(
+            MAX(cist.id),
             generate_snowflake_id()
         ) AS id,
         t.company_id,
@@ -14289,9 +14281,27 @@ BEGIN
         NOW() AS update_time,
         0 AS deleted
     FROM temp_jh_intransit t
+    LEFT JOIN cos_goods_sku_intransit_stock cist ON 
+        cist.company_id = t.company_id 
+        AND cist.shop_id = t.cos_shop_id 
+        AND cist.sku_id = t.cos_sku_id 
+        AND cist.external_id = t.container_no 
+        AND cist.datasource_type = 'JH'
+        AND cist.deleted = 0
     WHERE t.mapping_status = 'OK'
         AND t.cos_shop_id IS NOT NULL
-        AND t.cos_sku_id IS NOT NULL;
+        AND t.cos_sku_id IS NOT NULL
+    GROUP BY 
+        t.company_id,
+        t.cos_shop_id,
+        t.spu_id,
+        t.cos_sku_id,
+        t.sku_code,
+        t.container_no,
+        t.ship_qty,
+        t.receive_qty,
+        t.shipment_date,
+        t.shipment_status;
     
     -- 统计插入和更新的记录数
     -- 注意：REPLACE INTO的ROW_COUNT()如果更新则返回2，如果插入则返回1
