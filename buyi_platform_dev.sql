@@ -3056,11 +3056,99 @@ CREATE TABLE `cos_goods_sku_intransit_stock` (
   `receive_qty` int DEFAULT '0' COMMENT '收货数量',
   `shipment_date` date NOT NULL COMMENT '发货日期',
   `shipment_status` tinyint NOT NULL COMMENT '发货单状态码（0=在途，2=完成）',
+  `datasource_type` varchar(20) DEFAULT 'JH' COMMENT '数据源类型（JH=鲸汇）',
+  `as_of_date` date DEFAULT NULL COMMENT '数据截止日期',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` bigint NOT NULL DEFAULT '0' COMMENT '删除标记：0=未删除，大于0：删除',
-  PRIMARY KEY (`id`) USING BTREE
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_intransit_stock` (`company_id`,`shop_id`,`sku_id`,`external_id`,`datasource_type`,`deleted`) USING BTREE,
+  KEY `idx_company_shop_sku` (`company_id`,`shop_id`,`sku_id`) USING BTREE,
+  KEY `idx_shipment_date` (`shipment_date`) USING BTREE,
+  KEY `idx_as_of_date` (`as_of_date`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='渠道sku在途库存表';
+
+-- ----------------------------
+-- Table structure for cos_sync_jh_intransit_log
+-- ----------------------------
+DROP TABLE IF EXISTS `cos_sync_jh_intransit_log`;
+CREATE TABLE `cos_sync_jh_intransit_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `sync_time` datetime NOT NULL COMMENT '同步时间',
+  `company_id` bigint DEFAULT NULL COMMENT '企业id（可为空表示全局）',
+  `days_back` int DEFAULT NULL COMMENT '回溯天数',
+  `total_shipment_lines` int DEFAULT 0 COMMENT '总发货明细行数',
+  `mapped_lines` int DEFAULT 0 COMMENT '成功映射的行数',
+  `unmapped_sku_lines` int DEFAULT 0 COMMENT 'SKU未映射的行数',
+  `unmapped_shop_lines` int DEFAULT 0 COMMENT '店铺未映射的行数',
+  `inserted_records` int DEFAULT 0 COMMENT '新插入记录数',
+  `updated_records` int DEFAULT 0 COMMENT '更新记录数',
+  `status` varchar(20) DEFAULT 'SUCCESS' COMMENT '同步状态（SUCCESS/FAILED/PARTIAL）',
+  `error_message` text COMMENT '错误信息',
+  PRIMARY KEY (`id`),
+  KEY `idx_sync_time` (`sync_time`),
+  KEY `idx_company_id` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='JH在途库存同步日志表';
+
+-- ----------------------------
+-- Table structure for cos_sync_jh_unmapped_records
+-- ----------------------------
+DROP TABLE IF EXISTS `cos_sync_jh_unmapped_records`;
+CREATE TABLE `cos_sync_jh_unmapped_records` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `log_id` bigint DEFAULT NULL COMMENT '关联同步日志ID',
+  `sync_time` datetime NOT NULL COMMENT '同步时间',
+  `unmapped_type` varchar(20) NOT NULL COMMENT '未映射类型（SKU/SHOP）',
+  `jh_shop_id` bigint DEFAULT NULL COMMENT 'JH店铺ID',
+  `jh_shop_name` varchar(128) DEFAULT NULL COMMENT 'JH店铺名称',
+  `warehouse_sku` varchar(64) DEFAULT NULL COMMENT '仓库SKU编码',
+  `container_no` varchar(64) DEFAULT NULL COMMENT '集装箱/批次编号',
+  `ship_qty` int DEFAULT 0 COMMENT '发货数量',
+  `receive_qty` int DEFAULT 0 COMMENT '收货数量',
+  `shipment_date` date DEFAULT NULL COMMENT '发货日期',
+  PRIMARY KEY (`id`),
+  KEY `idx_log_id` (`log_id`),
+  KEY `idx_sync_time` (`sync_time`),
+  KEY `idx_unmapped_type` (`unmapped_type`),
+  KEY `idx_warehouse_sku` (`warehouse_sku`),
+  KEY `idx_jh_shop_id` (`jh_shop_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='JH在途库存未映射记录表';
+
+-- ----------------------------
+-- View structure for v_jh_intransit_stock_summary
+-- ----------------------------
+DROP VIEW IF EXISTS `v_jh_intransit_stock_summary`;
+CREATE VIEW `v_jh_intransit_stock_summary` AS
+SELECT 
+    cist.company_id,
+    cist.shop_id,
+    cs.channel_name AS shop_name,
+    cist.sku_id,
+    cist.sku_code,
+    cgs.sku_name,
+    cgs.supplier_sku_code,
+    COUNT(DISTINCT cist.external_id) AS shipment_count,
+    SUM(cist.ship_qty) AS total_ship_qty,
+    SUM(cist.receive_qty) AS total_receive_qty,
+    SUM(cist.ship_qty - cist.receive_qty) AS total_intransit_qty,
+    MIN(cist.shipment_date) AS earliest_shipment_date,
+    MAX(cist.shipment_date) AS latest_shipment_date,
+    MAX(cist.as_of_date) AS as_of_date,
+    MAX(cist.update_time) AS last_update_time
+FROM cos_goods_sku_intransit_stock cist
+LEFT JOIN cos_shop cs ON cist.shop_id = cs.id AND cs.deleted = 0
+LEFT JOIN cos_goods_sku cgs ON cist.sku_id = cgs.id AND cgs.is_delete = 0
+WHERE cist.deleted = 0
+    AND cist.datasource_type = 'JH'
+    AND (cist.ship_qty - cist.receive_qty) > 0
+GROUP BY 
+    cist.company_id,
+    cist.shop_id,
+    cs.channel_name,
+    cist.sku_id,
+    cist.sku_code,
+    cgs.sku_name,
+    cgs.supplier_sku_code;
 
 -- ----------------------------
 -- Table structure for cos_goods_sku_sale
@@ -13951,6 +14039,284 @@ CREATE TRIGGER `trg_amf_lx_shipment_after_insert` AFTER INSERT ON `amf_lx_shipme
 --             END IF;
 --         END IF;
     END IF;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_sync_jh_intransit_stock_to_cos
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_sync_jh_intransit_stock_to_cos`;
+delimiter ;;
+CREATE PROCEDURE `sp_sync_jh_intransit_stock_to_cos`(
+    IN p_company_id BIGINT,
+    IN p_days INT
+)
+BEGIN
+    DECLARE v_log_id BIGINT;
+    DECLARE v_total_lines INT DEFAULT 0;
+    DECLARE v_mapped_lines INT DEFAULT 0;
+    DECLARE v_unmapped_sku_lines INT DEFAULT 0;
+    DECLARE v_unmapped_shop_lines INT DEFAULT 0;
+    DECLARE v_inserted_records INT DEFAULT 0;
+    DECLARE v_updated_records INT DEFAULT 0;
+    DECLARE v_status VARCHAR(20) DEFAULT 'SUCCESS';
+    DECLARE v_error_message TEXT DEFAULT NULL;
+    DECLARE v_sync_time DATETIME;
+    DECLARE exit_handler INT DEFAULT 0;
+    
+    -- 错误处理
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET exit_handler = 1;
+        SET v_status = 'FAILED';
+        GET DIAGNOSTICS CONDITION 1 v_error_message = MESSAGE_TEXT;
+    END;
+    
+    SET v_sync_time = NOW();
+    
+    -- 创建临时表存储待同步的数据
+    CREATE TEMPORARY TABLE IF NOT EXISTS temp_jh_intransit (
+        row_id INT AUTO_INCREMENT PRIMARY KEY,
+        company_id BIGINT,
+        cos_shop_id BIGINT,
+        cos_sku_id BIGINT,
+        spu_id BIGINT,
+        sku_code VARCHAR(50),
+        container_no VARCHAR(64),
+        ship_qty INT,
+        receive_qty INT,
+        intransit_qty INT,
+        shipment_date DATE,
+        shipment_status TINYINT,
+        jh_shop_id BIGINT,
+        jh_shop_name VARCHAR(128),
+        warehouse_sku VARCHAR(64),
+        mapping_status VARCHAR(20) -- 'OK', 'UNMAPPED_SKU', 'UNMAPPED_SHOP'
+    );
+    
+    -- 步骤1: 从JH shipment数据提取在途库存（ship_qty > receive_qty）
+    -- 同时进行shop和SKU映射
+    INSERT INTO temp_jh_intransit (
+        company_id,
+        cos_shop_id,
+        cos_sku_id,
+        spu_id,
+        sku_code,
+        container_no,
+        ship_qty,
+        receive_qty,
+        intransit_qty,
+        shipment_date,
+        shipment_status,
+        jh_shop_id,
+        jh_shop_name,
+        warehouse_sku,
+        mapping_status
+    )
+    SELECT 
+        COALESCE(cs.company_id, p_company_id) AS company_id,
+        cs.id AS cos_shop_id,
+        cgs.id AS cos_sku_id,
+        cgs.spu_id AS spu_id,
+        COALESCE(cgs.sku_code, jss.warehouse_sku) AS sku_code,
+        jss.container_no,
+        jss.ship_qty,
+        COALESCE(jss.receive_qty, 0) AS receive_qty,
+        jss.ship_qty - COALESCE(jss.receive_qty, 0) AS intransit_qty,
+        js.shipment_date,
+        js.status AS shipment_status,
+        jss.shop_id AS jh_shop_id,
+        jss.shop_show_name AS jh_shop_name,
+        jss.warehouse_sku,
+        CASE 
+            WHEN cs.id IS NULL THEN 'UNMAPPED_SHOP'
+            WHEN cgs.id IS NULL THEN 'UNMAPPED_SKU'
+            ELSE 'OK'
+        END AS mapping_status
+    FROM amf_jh_shipment js
+    INNER JOIN amf_jh_shipment_sku jss ON js.id = jss.property_shipment_id
+    LEFT JOIN cos_shop cs ON cs.platform_shop_id = jss.shop_id 
+        AND cs.deleted = 0 
+        AND cs.active = 1
+        AND (p_company_id IS NULL OR cs.company_id = p_company_id)
+    LEFT JOIN cos_goods_sku cgs ON (
+        cgs.supplier_sku_code = jss.warehouse_sku 
+        OR cgs.sku_code = jss.warehouse_sku
+    )
+        AND (cs.id IS NULL OR cgs.shop_id = cs.id)
+        AND cgs.is_delete = 0
+        AND (p_company_id IS NULL OR cgs.company_id = COALESCE(cs.company_id, p_company_id))
+    WHERE 
+        -- 只同步在途数据：发货数量 > 收货数量
+        jss.ship_qty > COALESCE(jss.receive_qty, 0)
+        -- 回溯指定天数
+        AND js.shipment_date >= DATE_SUB(CURDATE(), INTERVAL p_days DAY)
+        -- 公司过滤（如果提供）
+        AND (p_company_id IS NULL OR cs.company_id = p_company_id OR cs.id IS NULL);
+    
+    -- 统计总行数
+    SELECT COUNT(*) INTO v_total_lines FROM temp_jh_intransit;
+    
+    -- 统计映射情况
+    SELECT COUNT(*) INTO v_mapped_lines FROM temp_jh_intransit WHERE mapping_status = 'OK';
+    SELECT COUNT(*) INTO v_unmapped_sku_lines FROM temp_jh_intransit WHERE mapping_status = 'UNMAPPED_SKU';
+    SELECT COUNT(*) INTO v_unmapped_shop_lines FROM temp_jh_intransit WHERE mapping_status = 'UNMAPPED_SHOP';
+    
+    -- 创建同步日志记录
+    INSERT INTO cos_sync_jh_intransit_log (
+        sync_time,
+        company_id,
+        days_back,
+        total_shipment_lines,
+        mapped_lines,
+        unmapped_sku_lines,
+        unmapped_shop_lines,
+        status
+    ) VALUES (
+        v_sync_time,
+        p_company_id,
+        p_days,
+        v_total_lines,
+        v_mapped_lines,
+        v_unmapped_sku_lines,
+        v_unmapped_shop_lines,
+        v_status
+    );
+    
+    SET v_log_id = LAST_INSERT_ID();
+    
+    -- 记录未映射的SKU
+    INSERT INTO cos_sync_jh_unmapped_records (
+        log_id,
+        sync_time,
+        unmapped_type,
+        jh_shop_id,
+        jh_shop_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date
+    )
+    SELECT 
+        v_log_id,
+        v_sync_time,
+        'SKU',
+        jh_shop_id,
+        jh_shop_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date
+    FROM temp_jh_intransit
+    WHERE mapping_status = 'UNMAPPED_SKU';
+    
+    -- 记录未映射的店铺
+    INSERT INTO cos_sync_jh_unmapped_records (
+        log_id,
+        sync_time,
+        unmapped_type,
+        jh_shop_id,
+        jh_shop_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date
+    )
+    SELECT 
+        v_log_id,
+        v_sync_time,
+        'SHOP',
+        jh_shop_id,
+        jh_shop_name,
+        warehouse_sku,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date
+    FROM temp_jh_intransit
+    WHERE mapping_status = 'UNMAPPED_SHOP';
+    
+    -- 步骤2: 同步到cos_goods_sku_intransit_stock（只处理成功映射的记录）
+    -- 使用INSERT ... ON DUPLICATE KEY UPDATE实现upsert
+    INSERT INTO cos_goods_sku_intransit_stock (
+        id,
+        company_id,
+        shop_id,
+        spu_id,
+        sku_id,
+        sku_code,
+        external_id,
+        ship_qty,
+        receive_qty,
+        shipment_date,
+        shipment_status,
+        datasource_type,
+        as_of_date,
+        create_time,
+        update_time,
+        deleted
+    )
+    SELECT 
+        generate_snowflake_id() AS id,
+        company_id,
+        cos_shop_id,
+        spu_id,
+        cos_sku_id,
+        sku_code,
+        container_no,
+        ship_qty,
+        receive_qty,
+        shipment_date,
+        shipment_status,
+        'JH' AS datasource_type,
+        CURDATE() AS as_of_date,
+        NOW() AS create_time,
+        NOW() AS update_time,
+        0 AS deleted
+    FROM temp_jh_intransit
+    WHERE mapping_status = 'OK'
+        AND cos_shop_id IS NOT NULL
+        AND cos_sku_id IS NOT NULL
+    ON DUPLICATE KEY UPDATE
+        ship_qty = VALUES(ship_qty),
+        receive_qty = VALUES(receive_qty),
+        shipment_date = VALUES(shipment_date),
+        shipment_status = VALUES(shipment_status),
+        as_of_date = VALUES(as_of_date),
+        update_time = NOW();
+    
+    -- 统计插入和更新的记录数
+    -- 注意：MySQL的ROW_COUNT()返回插入+更新*2的数量
+    -- 如果是插入，ROW_COUNT()=1；如果是更新，ROW_COUNT()=2
+    SET v_inserted_records = ROW_COUNT();
+    
+    -- 更新日志记录
+    UPDATE cos_sync_jh_intransit_log
+    SET 
+        inserted_records = v_inserted_records,
+        updated_records = v_updated_records,
+        status = v_status,
+        error_message = v_error_message
+    WHERE id = v_log_id;
+    
+    -- 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS temp_jh_intransit;
+    
+    -- 返回同步结果
+    SELECT 
+        v_log_id AS log_id,
+        v_status AS status,
+        v_total_lines AS total_lines,
+        v_mapped_lines AS mapped_lines,
+        v_unmapped_sku_lines AS unmapped_sku_lines,
+        v_unmapped_shop_lines AS unmapped_shop_lines,
+        v_inserted_records AS affected_records,
+        v_error_message AS error_message;
+        
 END
 ;;
 delimiter ;
