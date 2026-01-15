@@ -13989,10 +13989,12 @@ CREATE PROCEDURE `sp_sync_jh_intransit_stock_to_cos`(
 BEGIN
     DECLARE v_error_msg VARCHAR(500);
     
-    -- 错误处理：记录错误并回滚
+    -- 错误处理：记录错误并回滚，清理临时表
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
+        DROP TEMPORARY TABLE IF EXISTS tmp_jh_intransit;
+        DROP TEMPORARY TABLE IF EXISTS tmp_mapped_data;
         ROLLBACK;
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = v_error_msg;
@@ -14013,7 +14015,8 @@ BEGIN
         intransit_qty INT,
         shipment_date DATE,
         INDEX idx_shop (jh_shop_id),
-        INDEX idx_sku (warehouse_sku)
+        INDEX idx_sku (warehouse_sku),
+        INDEX idx_shop_sku (jh_shop_id, warehouse_sku)
     ) ENGINE=MEMORY;
     
     -- 从JH发货明细中筛选在途数据（ship_qty > receive_qty）
@@ -14133,14 +14136,15 @@ BEGIN
     
     -- 第二步：SKU映射（仅针对Shop映射成功的记录）
     -- 优先匹配supplier_sku_code，其次sku_code
+    -- 优先选择shop_id匹配的，其次选择shop_id为NULL的全局SKU
     -- 先尝试supplier_sku_code匹配
     UPDATE tmp_mapped_data tm
     INNER JOIN (
         SELECT 
             tm2.shipment_sku_id,
-            MAX(gs.id) AS sku_id,  -- 使用MAX(id)作为确定性选择
-            MAX(gs.spu_id) AS spu_id,
-            MAX(gs.sku_code) AS sku_code,
+            -- 优先选择shop-specific匹配，然后是全局匹配，最后用MAX(id)确定性选择
+            MAX(CASE WHEN gs.shop_id = tm2.cos_shop_id THEN gs.id ELSE NULL END) AS shop_specific_id,
+            MAX(CASE WHEN gs.shop_id IS NULL THEN gs.id ELSE NULL END) AS global_id,
             COUNT(*) AS match_count
         FROM tmp_mapped_data tm2
         INNER JOIN cos_goods_sku gs ON gs.supplier_sku_code = tm2.warehouse_sku
@@ -14150,10 +14154,11 @@ BEGIN
         WHERE tm2.map_status = 'SHOP_OK'
         GROUP BY tm2.shipment_sku_id
     ) sku_map ON tm.shipment_sku_id = sku_map.shipment_sku_id
+    INNER JOIN cos_goods_sku gs2 ON gs2.id = COALESCE(sku_map.shop_specific_id, sku_map.global_id)
     SET 
-        tm.cos_sku_id = sku_map.sku_id,
-        tm.cos_spu_id = sku_map.spu_id,
-        tm.cos_sku_code = sku_map.sku_code,
+        tm.cos_sku_id = gs2.id,
+        tm.cos_spu_id = gs2.spu_id,
+        tm.cos_sku_code = gs2.sku_code,
         tm.map_status = CASE 
             WHEN sku_map.match_count > 1 THEN 'SKU_MULTI'
             ELSE 'SUCCESS'
@@ -14165,9 +14170,9 @@ BEGIN
     INNER JOIN (
         SELECT 
             tm2.shipment_sku_id,
-            MAX(gs.id) AS sku_id,
-            MAX(gs.spu_id) AS spu_id,
-            MAX(gs.sku_code) AS sku_code,
+            -- 优先选择shop-specific匹配，然后是全局匹配，最后用MAX(id)确定性选择
+            MAX(CASE WHEN gs.shop_id = tm2.cos_shop_id THEN gs.id ELSE NULL END) AS shop_specific_id,
+            MAX(CASE WHEN gs.shop_id IS NULL THEN gs.id ELSE NULL END) AS global_id,
             COUNT(*) AS match_count
         FROM tmp_mapped_data tm2
         INNER JOIN cos_goods_sku gs ON gs.sku_code = tm2.warehouse_sku
@@ -14178,10 +14183,11 @@ BEGIN
           AND tm2.cos_sku_id IS NULL
         GROUP BY tm2.shipment_sku_id
     ) sku_map ON tm.shipment_sku_id = sku_map.shipment_sku_id
+    INNER JOIN cos_goods_sku gs2 ON gs2.id = COALESCE(sku_map.shop_specific_id, sku_map.global_id)
     SET 
-        tm.cos_sku_id = sku_map.sku_id,
-        tm.cos_spu_id = sku_map.spu_id,
-        tm.cos_sku_code = sku_map.sku_code,
+        tm.cos_sku_id = gs2.id,
+        tm.cos_spu_id = gs2.spu_id,
+        tm.cos_sku_code = gs2.sku_code,
         tm.map_status = CASE 
             WHEN sku_map.match_count > 1 THEN 'SKU_MULTI'
             ELSE 'SUCCESS'
