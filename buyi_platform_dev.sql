@@ -14241,8 +14241,9 @@ BEGIN
     WHERE mapping_status = 'UNMAPPED_SHOP';
     
     -- 步骤2: 同步到cos_goods_sku_intransit_stock（只处理成功映射的记录）
-    -- 使用INSERT ... ON DUPLICATE KEY UPDATE实现upsert
-    INSERT INTO cos_goods_sku_intransit_stock (
+    -- 使用REPLACE INTO来实现upsert（先删除后插入）
+    -- 注意：由于有唯一索引uk_intransit_stock，相同的记录会被替换
+    REPLACE INTO cos_goods_sku_intransit_stock (
         id,
         company_id,
         shop_id,
@@ -14261,38 +14262,41 @@ BEGIN
         deleted
     )
     SELECT 
-        generate_snowflake_id() AS id,
-        company_id,
-        cos_shop_id,
-        spu_id,
-        cos_sku_id,
-        sku_code,
-        container_no,
-        ship_qty,
-        receive_qty,
-        shipment_date,
-        shipment_status,
+        IFNULL(
+            (SELECT id FROM cos_goods_sku_intransit_stock 
+             WHERE company_id = t.company_id 
+             AND shop_id = t.cos_shop_id 
+             AND sku_id = t.cos_sku_id 
+             AND external_id = t.container_no 
+             AND datasource_type = 'JH'
+             AND deleted = 0
+             LIMIT 1),
+            generate_snowflake_id()
+        ) AS id,
+        t.company_id,
+        t.cos_shop_id,
+        t.spu_id,
+        t.cos_sku_id,
+        t.sku_code,
+        t.container_no,
+        t.ship_qty,
+        t.receive_qty,
+        t.shipment_date,
+        t.shipment_status,
         'JH' AS datasource_type,
         CURDATE() AS as_of_date,
         NOW() AS create_time,
         NOW() AS update_time,
         0 AS deleted
-    FROM temp_jh_intransit
-    WHERE mapping_status = 'OK'
-        AND cos_shop_id IS NOT NULL
-        AND cos_sku_id IS NOT NULL
-    ON DUPLICATE KEY UPDATE
-        ship_qty = VALUES(ship_qty),
-        receive_qty = VALUES(receive_qty),
-        shipment_date = VALUES(shipment_date),
-        shipment_status = VALUES(shipment_status),
-        as_of_date = VALUES(as_of_date),
-        update_time = NOW();
+    FROM temp_jh_intransit t
+    WHERE t.mapping_status = 'OK'
+        AND t.cos_shop_id IS NOT NULL
+        AND t.cos_sku_id IS NOT NULL;
     
     -- 统计插入和更新的记录数
-    -- 注意：MySQL的ROW_COUNT()返回插入+更新*2的数量
-    -- 如果是插入，ROW_COUNT()=1；如果是更新，ROW_COUNT()=2
+    -- 注意：REPLACE INTO的ROW_COUNT()如果更新则返回2，如果插入则返回1
     SET v_inserted_records = ROW_COUNT();
+    SET v_updated_records = 0; -- REPLACE INTO不区分插入和更新
     
     -- 更新日志记录
     UPDATE cos_sync_jh_intransit_log
