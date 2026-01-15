@@ -13956,3 +13956,234 @@ END
 delimiter ;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ----------------------------
+-- Business Analysis Module Tables
+-- ----------------------------
+
+-- ----------------------------
+-- Table structure for bms_business_analysis
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_analysis`;
+CREATE TABLE `bms_business_analysis` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `business_date` date NOT NULL COMMENT '业务日期',
+  `business_type` tinyint NOT NULL COMMENT '业务类型：1-销售, 2-采购, 3-库存, 4-财务',
+  `shop_id` bigint DEFAULT NULL COMMENT '店铺id',
+  `warehouse_id` bigint DEFAULT NULL COMMENT '仓库id',
+  `spu_id` bigint DEFAULT NULL COMMENT '产品id',
+  `skc_id` bigint DEFAULT NULL COMMENT 'skc id',
+  `sku_id` bigint DEFAULT NULL COMMENT 'sku id',
+  `order_count` int DEFAULT '0' COMMENT '订单数量',
+  `order_amount` decimal(15,2) DEFAULT '0.00' COMMENT '订单金额',
+  `sales_count` int DEFAULT '0' COMMENT '销售数量',
+  `sales_amount` decimal(15,2) DEFAULT '0.00' COMMENT '销售金额',
+  `refund_count` int DEFAULT '0' COMMENT '退款数量',
+  `refund_amount` decimal(15,2) DEFAULT '0.00' COMMENT '退款金额',
+  `profit_amount` decimal(15,2) DEFAULT '0.00' COMMENT '利润金额',
+  `profit_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '利润率',
+  `stock_count` int DEFAULT '0' COMMENT '库存数量',
+  `stock_amount` decimal(15,2) DEFAULT '0.00' COMMENT '库存金额',
+  `turnover_days` int DEFAULT '0' COMMENT '周转天数',
+  `customer_count` int DEFAULT '0' COMMENT '客户数量',
+  `new_customer_count` int DEFAULT '0' COMMENT '新客户数量',
+  `repurchase_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '复购率',
+  `conversion_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '转化率',
+  `average_order_value` decimal(15,2) DEFAULT '0.00' COMMENT '客单价',
+  `analysis_status` tinyint DEFAULT '1' COMMENT '分析状态：1-待分析, 2-分析中, 3-已完成, 4-异常',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_by` bigint DEFAULT NULL COMMENT '创建人',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by` bigint DEFAULT NULL COMMENT '修改人',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_business_analysis` (`company_id`,`business_date`,`business_type`,`shop_id`,`warehouse_id`,`sku_id`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`business_date`) USING BTREE,
+  KEY `idx_business_type` (`business_type`) USING BTREE,
+  KEY `idx_shop_id` (`shop_id`) USING BTREE,
+  KEY `idx_warehouse_id` (`warehouse_id`) USING BTREE,
+  KEY `idx_sku_id` (`sku_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务分析主表';
+
+-- ----------------------------
+-- Table structure for bms_business_analysis_daily
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_analysis_daily`;
+CREATE TABLE `bms_business_analysis_daily` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `analysis_date` date NOT NULL COMMENT '分析日期',
+  `total_order_count` int DEFAULT '0' COMMENT '总订单数',
+  `total_order_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总订单金额',
+  `total_sales_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总销售额',
+  `total_profit_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总利润',
+  `total_profit_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '总利润率',
+  `total_refund_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总退款金额',
+  `refund_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '退款率',
+  `total_customer_count` int DEFAULT '0' COMMENT '总客户数',
+  `new_customer_count` int DEFAULT '0' COMMENT '新增客户数',
+  `active_customer_count` int DEFAULT '0' COMMENT '活跃客户数',
+  `repurchase_customer_count` int DEFAULT '0' COMMENT '复购客户数',
+  `average_order_value` decimal(15,2) DEFAULT '0.00' COMMENT '平均客单价',
+  `visit_count` int DEFAULT '0' COMMENT '访问量',
+  `conversion_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '转化率',
+  `gmv` decimal(15,2) DEFAULT '0.00' COMMENT 'GMV(成交总额)',
+  `top_selling_sku_id` bigint DEFAULT NULL COMMENT '热销SKU ID',
+  `top_selling_sku_count` int DEFAULT '0' COMMENT '热销SKU数量',
+  `low_stock_alert_count` int DEFAULT '0' COMMENT '低库存预警数',
+  `out_of_stock_count` int DEFAULT '0' COMMENT '缺货数量',
+  `inventory_turnover_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '库存周转率',
+  `analysis_dimension` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'overall' COMMENT '分析维度：overall-整体, shop-店铺, warehouse-仓库, product-产品',
+  `dimension_id` bigint DEFAULT NULL COMMENT '维度ID（店铺ID/仓库ID/产品ID）',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_daily_analysis` (`company_id`,`analysis_date`,`analysis_dimension`,`dimension_id`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`analysis_date`) USING BTREE,
+  KEY `idx_dimension` (`analysis_dimension`,`dimension_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务分析日报表';
+
+-- ----------------------------
+-- Table structure for bms_business_analysis_monthly
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_analysis_monthly`;
+CREATE TABLE `bms_business_analysis_monthly` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `analysis_year` int NOT NULL COMMENT '分析年份',
+  `analysis_month` int NOT NULL COMMENT '分析月份',
+  `total_order_count` int DEFAULT '0' COMMENT '总订单数',
+  `total_order_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总订单金额',
+  `total_sales_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总销售额',
+  `total_profit_amount` decimal(15,2) DEFAULT '0.00' COMMENT '总利润',
+  `total_profit_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '总利润率',
+  `mom_growth_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '环比增长率',
+  `yoy_growth_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '同比增长率',
+  `total_customer_count` int DEFAULT '0' COMMENT '总客户数',
+  `new_customer_count` int DEFAULT '0' COMMENT '新增客户数',
+  `active_customer_count` int DEFAULT '0' COMMENT '活跃客户数',
+  `customer_retention_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '客户留存率',
+  `average_order_value` decimal(15,2) DEFAULT '0.00' COMMENT '平均客单价',
+  `total_visit_count` int DEFAULT '0' COMMENT '总访问量',
+  `conversion_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '转化率',
+  `gmv` decimal(15,2) DEFAULT '0.00' COMMENT 'GMV(成交总额)',
+  `inventory_turnover_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '库存周转率',
+  `average_turnover_days` int DEFAULT '0' COMMENT '平均周转天数',
+  `best_selling_category` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '最畅销类目',
+  `worst_selling_category` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '滞销类目',
+  `peak_sales_day` date DEFAULT NULL COMMENT '销售峰值日期',
+  `analysis_dimension` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'overall' COMMENT '分析维度：overall-整体, shop-店铺, warehouse-仓库, category-类目',
+  `dimension_id` bigint DEFAULT NULL COMMENT '维度ID',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_monthly_analysis` (`company_id`,`analysis_year`,`analysis_month`,`analysis_dimension`,`dimension_id`) USING BTREE,
+  KEY `idx_company_year_month` (`company_id`,`analysis_year`,`analysis_month`) USING BTREE,
+  KEY `idx_dimension` (`analysis_dimension`,`dimension_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务分析月报表';
+
+-- ----------------------------
+-- Table structure for bms_business_kpi
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_kpi`;
+CREATE TABLE `bms_business_kpi` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `kpi_date` date NOT NULL COMMENT 'KPI日期',
+  `kpi_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'KPI类型：sales-销售, profit-利润, customer-客户, inventory-库存, operation-运营',
+  `kpi_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT 'KPI名称',
+  `kpi_value` decimal(15,4) DEFAULT '0.0000' COMMENT 'KPI实际值',
+  `kpi_target` decimal(15,4) DEFAULT '0.0000' COMMENT 'KPI目标值',
+  `kpi_unit` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'KPI单位',
+  `completion_rate` decimal(10,4) DEFAULT '0.0000' COMMENT '完成率',
+  `trend` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '趋势：up-上升, down-下降, stable-稳定',
+  `status` tinyint DEFAULT '1' COMMENT '状态：1-正常, 2-预警, 3-异常',
+  `shop_id` bigint DEFAULT NULL COMMENT '店铺id',
+  `warehouse_id` bigint DEFAULT NULL COMMENT '仓库id',
+  `department` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '部门',
+  `responsible_user_id` bigint DEFAULT NULL COMMENT '负责人ID',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_by` bigint DEFAULT NULL COMMENT '创建人',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by` bigint DEFAULT NULL COMMENT '修改人',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_kpi` (`company_id`,`kpi_date`,`kpi_type`,`kpi_name`,`shop_id`,`warehouse_id`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`kpi_date`) USING BTREE,
+  KEY `idx_kpi_type` (`kpi_type`) USING BTREE,
+  KEY `idx_status` (`status`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务KPI指标表';
+
+-- ----------------------------
+-- Table structure for bms_business_trend
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_trend`;
+CREATE TABLE `bms_business_trend` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `trend_date` date NOT NULL COMMENT '趋势日期',
+  `trend_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '趋势类型：sales-销售, profit-利润, inventory-库存, customer-客户',
+  `metric_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '指标名称',
+  `metric_value` decimal(15,4) DEFAULT '0.0000' COMMENT '指标值',
+  `day_over_day_change` decimal(10,4) DEFAULT '0.0000' COMMENT '日环比变化率',
+  `week_over_week_change` decimal(10,4) DEFAULT '0.0000' COMMENT '周环比变化率',
+  `month_over_month_change` decimal(10,4) DEFAULT '0.0000' COMMENT '月环比变化率',
+  `year_over_year_change` decimal(10,4) DEFAULT '0.0000' COMMENT '同比变化率',
+  `moving_average_7d` decimal(15,4) DEFAULT '0.0000' COMMENT '7天移动平均',
+  `moving_average_30d` decimal(15,4) DEFAULT '0.0000' COMMENT '30天移动平均',
+  `forecast_value` decimal(15,4) DEFAULT '0.0000' COMMENT '预测值',
+  `forecast_confidence` decimal(10,4) DEFAULT '0.0000' COMMENT '预测置信度',
+  `trend_direction` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '趋势方向：up-上升, down-下降, stable-稳定',
+  `analysis_dimension` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'overall' COMMENT '分析维度：overall-整体, shop-店铺, product-产品, region-区域',
+  `dimension_id` bigint DEFAULT NULL COMMENT '维度ID',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_trend` (`company_id`,`trend_date`,`trend_type`,`metric_name`,`analysis_dimension`,`dimension_id`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`trend_date`) USING BTREE,
+  KEY `idx_trend_type` (`trend_type`) USING BTREE,
+  KEY `idx_dimension` (`analysis_dimension`,`dimension_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务趋势分析表';
+
+-- ----------------------------
+-- Table structure for bms_business_alert
+-- ----------------------------
+DROP TABLE IF EXISTS `bms_business_alert`;
+CREATE TABLE `bms_business_alert` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `alert_date` datetime NOT NULL COMMENT '预警日期',
+  `alert_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '预警类型：stock-库存, sales-销售, profit-利润, quality-质量',
+  `alert_level` tinyint NOT NULL COMMENT '预警级别：1-提示, 2-警告, 3-严重',
+  `alert_title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '预警标题',
+  `alert_content` varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '预警内容',
+  `related_business_type` tinyint DEFAULT NULL COMMENT '关联业务类型：1-销售, 2-采购, 3-库存, 4-财务',
+  `related_id` bigint DEFAULT NULL COMMENT '关联业务ID',
+  `shop_id` bigint DEFAULT NULL COMMENT '店铺id',
+  `warehouse_id` bigint DEFAULT NULL COMMENT '仓库id',
+  `sku_id` bigint DEFAULT NULL COMMENT 'sku id',
+  `metric_value` decimal(15,4) DEFAULT NULL COMMENT '指标值',
+  `threshold_value` decimal(15,4) DEFAULT NULL COMMENT '阈值',
+  `alert_status` tinyint DEFAULT '1' COMMENT '预警状态：1-未处理, 2-处理中, 3-已处理, 4-已忽略',
+  `handler_user_id` bigint DEFAULT NULL COMMENT '处理人ID',
+  `handle_time` datetime DEFAULT NULL COMMENT '处理时间',
+  `handle_result` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '处理结果',
+  `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_delete` tinyint DEFAULT '0' COMMENT '是否删除：0-未删除, 1-已删除',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`alert_date`) USING BTREE,
+  KEY `idx_alert_type_level` (`alert_type`,`alert_level`) USING BTREE,
+  KEY `idx_alert_status` (`alert_status`) USING BTREE,
+  KEY `idx_shop_warehouse` (`shop_id`,`warehouse_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='业务预警表';
