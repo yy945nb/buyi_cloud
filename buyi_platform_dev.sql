@@ -14239,9 +14239,9 @@ BEGIN
     WHERE mapping_status = 'UNMAPPED_SHOP';
     
     -- 步骤2: 同步到cos_goods_sku_intransit_stock（只处理成功映射的记录）
-    -- 使用REPLACE INTO来实现upsert（先删除后插入）
+    -- 使用INSERT...ON DUPLICATE KEY UPDATE实现upsert
     -- 唯一索引uk_intransit_stock确保不会有重复记录
-    REPLACE INTO cos_goods_sku_intransit_stock (
+    INSERT INTO cos_goods_sku_intransit_stock (
         id,
         company_id,
         shop_id,
@@ -14260,11 +14260,8 @@ BEGIN
         deleted
     )
     SELECT 
-        -- 对于已存在记录，保留原ID；新记录生成新ID
-        COALESCE(
-            cist.id,
-            generate_snowflake_id()
-        ) AS id,
+        -- 新记录生成新ID
+        generate_snowflake_id() AS id,
         t.company_id,
         t.cos_shop_id,
         t.spu_id,
@@ -14281,21 +14278,24 @@ BEGIN
         NOW() AS update_time,
         0 AS deleted
     FROM temp_jh_intransit t
-    LEFT JOIN cos_goods_sku_intransit_stock cist ON 
-        cist.company_id = t.company_id 
-        AND cist.shop_id = t.cos_shop_id 
-        AND cist.sku_id = t.cos_sku_id 
-        AND cist.external_id = t.container_no 
-        AND cist.datasource_type = 'JH'
-        AND cist.deleted = 0
     WHERE t.mapping_status = 'OK'
         AND t.cos_shop_id IS NOT NULL
-        AND t.cos_sku_id IS NOT NULL;
+        AND t.cos_sku_id IS NOT NULL
+    ON DUPLICATE KEY UPDATE
+        ship_qty = VALUES(ship_qty),
+        receive_qty = VALUES(receive_qty),
+        shipment_date = VALUES(shipment_date),
+        shipment_status = VALUES(shipment_status),
+        spu_id = VALUES(spu_id),
+        sku_code = VALUES(sku_code),
+        as_of_date = VALUES(as_of_date),
+        update_time = NOW();
     
     -- 统计受影响的记录数
-    -- 注意：REPLACE INTO的ROW_COUNT()如果更新则返回2，如果插入则返回1
+    -- 注意：INSERT...ON DUPLICATE KEY UPDATE的ROW_COUNT()
+    -- 对于新插入返回1，对于更新返回2，无变化返回0
     SET v_affected_records = ROW_COUNT();
-    SET v_updated_records = 0; -- REPLACE INTO不区分插入和更新，统一记录在affected_records
+    SET v_updated_records = 0; -- 无法区分插入和更新，统一记录在affected_records
     
     -- 更新日志记录
     UPDATE cos_sync_jh_intransit_log
