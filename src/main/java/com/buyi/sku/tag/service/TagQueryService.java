@@ -55,16 +55,28 @@ public class TagQueryService {
      * 
      * @param params 查询参数
      * @return 分页结果
+     * 
+     * PRODUCTION NOTE: This method returns empty results in the current in-memory implementation.
+     * For production use, implement proper database query with:
+     * - SELECT from sku_tag_result with JOIN to tag_group and tag_value
+     * - WHERE clauses for filtering (tag_group_id, tag_value_id, source, sku_id)
+     * - LIMIT and OFFSET for pagination
      */
     public PageResult<SkuTagResult> queryTagsWithPagination(QueryParams params) {
         logger.info("Querying tags with pagination: params={}", params);
         
-        // This is a simplified implementation
-        // In production, this should query from database with proper filtering and pagination
+        // TODO: Implement database query in production
+        // Example SQL:
+        // SELECT r.*, g.tag_group_code, v.tag_value_code
+        // FROM sku_tag_result r
+        // JOIN sku_tag_group g ON r.tag_group_id = g.id
+        // JOIN sku_tag_value v ON r.tag_value_id = v.id
+        // WHERE r.is_active = 1 [AND additional filters]
+        // ORDER BY r.update_time DESC
+        // LIMIT ? OFFSET ?
         
         List<SkuTagResult> allResults = new ArrayList<>();
-        // Collect all results from cache (in real implementation, query from DB)
-        // For now, returning empty results as we don't have a way to get all SKUs
+        // Returning empty results in demo - implement database query for production
         
         int total = allResults.size();
         int start = (params.getPage() - 1) * params.getPageSize();
@@ -89,12 +101,16 @@ public class TagQueryService {
      * @param tagGroupId 标签组ID
      * @param tagValueId 标签值ID
      * @return SKU ID列表
+     * 
+     * PRODUCTION NOTE: This method returns empty results in the current in-memory implementation.
+     * For production use, implement database query:
+     * SELECT sku_id FROM sku_tag_result
+     * WHERE tag_group_id = ? AND tag_value_id = ? AND is_active = 1
      */
     public List<String> filterSkusByTag(Long tagGroupId, Long tagValueId) {
         logger.info("Filtering SKUs by tag: tagGroupId={}, tagValueId={}", tagGroupId, tagValueId);
         
-        // This is a simplified implementation
-        // In production, query from database
+        // TODO: Implement database query in production
         List<String> skuIds = new ArrayList<>();
         
         logger.info("Filter completed: matchedCount={}", skuIds.size());
@@ -107,14 +123,20 @@ public class TagQueryService {
      * 
      * @param tagGroupId 标签组ID
      * @return 标签值ID -> SKU数量的映射
+     * 
+     * PRODUCTION NOTE: This method returns empty results in the current in-memory implementation.
+     * For production use, implement database query:
+     * SELECT tag_value_id, COUNT(*) as count
+     * FROM sku_tag_result
+     * WHERE tag_group_id = ? AND is_active = 1
+     * GROUP BY tag_value_id
      */
     public Map<Long, Integer> getTagDistribution(Long tagGroupId) {
         logger.info("Getting tag distribution for tag group: {}", tagGroupId);
         
         Map<Long, Integer> distribution = new HashMap<>();
         
-        // This is a simplified implementation
-        // In production, query from database with GROUP BY
+        // TODO: Implement database query in production with GROUP BY
         
         logger.info("Distribution calculated: tagGroupId={}, valueCount={}", 
                 tagGroupId, distribution.size());

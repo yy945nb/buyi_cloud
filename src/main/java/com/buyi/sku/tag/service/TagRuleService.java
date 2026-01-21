@@ -28,7 +28,11 @@ public class TagRuleService {
     private final TagService tagService;
     private final RuleEngine ruleEngine;
     
-    // In-memory storage for demonstration (in production, use database)
+    // In-memory storage for demonstration purposes only
+    // PRODUCTION NOTE: Replace with proper database persistence layer
+    // - Use ConcurrentHashMap for thread safety if keeping in-memory cache
+    // - Use AtomicLong for thread-safe ID generation
+    // - Implement DAO layer for sku_tag_rule table operations
     private Map<String, SkuTagRule> ruleCache = new HashMap<>();
     private Long nextRuleId = 1L;
     

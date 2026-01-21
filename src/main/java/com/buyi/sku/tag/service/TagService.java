@@ -19,7 +19,12 @@ public class TagService {
     
     private static final Logger logger = LoggerFactory.getLogger(TagService.class);
     
-    // In-memory storage for demonstration (in production, use database)
+    // In-memory storage for demonstration purposes only
+    // PRODUCTION NOTE: Replace with proper database persistence layer
+    // - Use ConcurrentHashMap for thread safety if keeping in-memory cache
+    // - Use AtomicLong for thread-safe ID generation
+    // - Implement DAO layer with JDBC/MyBatis/JPA for database operations
+    // - Consider using database sequences or auto-increment for ID generation
     private Map<String, List<SkuTagResult>> tagResultCache = new HashMap<>();
     private List<SkuTagHistory> tagHistoryList = new ArrayList<>();
     private Long nextResultId = 1L;
