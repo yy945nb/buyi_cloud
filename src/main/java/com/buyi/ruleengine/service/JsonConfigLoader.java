@@ -46,7 +46,9 @@ public class JsonConfigLoader {
     public RuleConfig loadRuleConfig(String jsonFilePath) throws IOException {
         logger.info("Loading rule config from JSON file: {}", jsonFilePath);
         
-        try (Reader reader = new FileReader(jsonFilePath)) {
+        try (Reader reader = java.nio.file.Files.newBufferedReader(
+                java.nio.file.Paths.get(jsonFilePath), 
+                java.nio.charset.StandardCharsets.UTF_8)) {
             JsonObject jsonObject = gson.fromJson(reader, JsonObject.class);
             return parseRuleConfig(jsonObject);
         }
@@ -76,7 +78,9 @@ public class JsonConfigLoader {
     public List<RuleConfig> loadRuleConfigs(String jsonFilePath) throws IOException {
         logger.info("Loading rule configs from JSON file: {}", jsonFilePath);
         
-        try (Reader reader = new FileReader(jsonFilePath)) {
+        try (Reader reader = java.nio.file.Files.newBufferedReader(
+                java.nio.file.Paths.get(jsonFilePath), 
+                java.nio.charset.StandardCharsets.UTF_8)) {
             JsonArray jsonArray = gson.fromJson(reader, JsonArray.class);
             List<RuleConfig> configs = new ArrayList<>();
             
@@ -99,7 +103,9 @@ public class JsonConfigLoader {
     public RuleFlow loadFlowConfig(String jsonFilePath) throws IOException {
         logger.info("Loading flow config from JSON file: {}", jsonFilePath);
         
-        try (Reader reader = new FileReader(jsonFilePath)) {
+        try (Reader reader = java.nio.file.Files.newBufferedReader(
+                java.nio.file.Paths.get(jsonFilePath), 
+                java.nio.charset.StandardCharsets.UTF_8)) {
             JsonObject jsonObject = gson.fromJson(reader, JsonObject.class);
             return parseFlowConfig(jsonObject);
         }
@@ -204,11 +210,6 @@ public class JsonConfigLoader {
                 step.setOnFailure(stepObj.get("onFailure").getAsString());
             } else {
                 step.setOnFailure("abort"); // 默认中止
-            }
-            
-            if (stepObj.has("priority")) {
-                // 如果步骤中包含priority，可以用于后续排序
-                // Priority can be used for sorting steps
             }
             
             steps.add(step);

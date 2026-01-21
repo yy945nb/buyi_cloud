@@ -79,8 +79,12 @@ public class FlowEngine {
         List<RuleFlow.FlowStep> steps = flow.getSteps();
         if (enablePrioritySorting) {
             steps = sortStepsByPriority(steps);
-            logger.info("Steps sorted by priority: {}", 
-                steps.stream().map(s -> s.getRuleCode()).reduce((a, b) -> a + " -> " + b).orElse(""));
+            if (logger.isInfoEnabled()) {
+                String orderedRules = steps.stream()
+                    .map(RuleFlow.FlowStep::getRuleCode)
+                    .collect(java.util.stream.Collectors.joining(" -> "));
+                logger.info("Steps sorted by priority: {}", orderedRules);
+            }
         }
         
         RuleContext currentContext = initialContext;

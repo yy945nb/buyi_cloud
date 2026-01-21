@@ -126,6 +126,7 @@ public class SqlQueryExecutor implements RuleExecutor {
         Map<String, Object> dynamicSqlConfig = (Map<String, Object>) dynamicSqlObj;
         
         StringBuilder sql = new StringBuilder(sqlTemplate);
+        boolean hasWhereClause = sqlTemplate.toUpperCase().contains("WHERE");
         
         // 处理WHERE条件拼接
         // Handle WHERE clause concatenation
@@ -142,8 +143,9 @@ public class SqlQueryExecutor implements RuleExecutor {
                 Object paramValue = context.getInput(paramName);
                 if (paramValue != null) {
                     // 如果SQL中不包含WHERE，添加WHERE，否则添加AND
-                    if (!sql.toString().toUpperCase().contains("WHERE")) {
+                    if (!hasWhereClause) {
                         sql.append(" WHERE ");
+                        hasWhereClause = true;
                     } else {
                         sql.append(" AND ");
                     }
