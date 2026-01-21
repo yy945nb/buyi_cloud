@@ -62,7 +62,7 @@
           "actionId": "calculate-tax",
           "type": "SCRIPT",
           "config": {
-            "expression": "util.roundTo(subtotal * 0.1, 2)"
+            "expression": "util:roundTo(subtotal * 0.1, 2)"
           },
           "outputVariable": "tax"
         },
@@ -70,7 +70,7 @@
           "actionId": "calculate-total",
           "type": "SCRIPT",
           "config": {
-            "expression": "util.roundTo(subtotal + tax, 2)"
+            "expression": "util:roundTo(subtotal + tax, 2)"
           },
           "outputVariable": "total"
         },
@@ -78,7 +78,7 @@
           "actionId": "generate-order-id",
           "type": "SCRIPT",
           "config": {
-            "expression": "'ORD-' + userId + '-' + util.uuid().substring(0, 8).toUpperCase()"
+            "expression": "'ORD-' + userId + '-' + util:uuid().substring(0, 8).toUpperCase()"
           },
           "outputVariable": "orderId"
         }
