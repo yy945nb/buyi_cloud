@@ -48,11 +48,15 @@ public class SqlQueryExecutor implements RuleExecutor {
             
             // 设置参数
             if (ruleConfig.getRuleParams() != null && ruleConfig.getRuleParams().containsKey("inputs")) {
-                List<String> inputs = (List<String>) ruleConfig.getRuleParams().get("inputs");
-                for (int i = 0; i < inputs.size(); i++) {
-                    String paramName = inputs.get(i);
-                    Object paramValue = context.getInput(paramName);
-                    stmt.setObject(i + 1, paramValue);
+                Object inputsObj = ruleConfig.getRuleParams().get("inputs");
+                if (inputsObj instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<String> inputs = (List<String>) inputsObj;
+                    for (int i = 0; i < inputs.size(); i++) {
+                        String paramName = inputs.get(i);
+                        Object paramValue = context.getInput(paramName);
+                        stmt.setObject(i + 1, paramValue);
+                    }
                 }
             }
             

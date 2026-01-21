@@ -19,10 +19,12 @@ public class FlowEngine {
     private static final Logger logger = LoggerFactory.getLogger(FlowEngine.class);
     private final RuleEngine ruleEngine;
     private final Map<String, RuleConfig> ruleConfigCache;
+    private final JavaExpressionExecutor expressionExecutor;
     
     public FlowEngine(RuleEngine ruleEngine) {
         this.ruleEngine = ruleEngine;
         this.ruleConfigCache = new HashMap<>();
+        this.expressionExecutor = new JavaExpressionExecutor();
     }
     
     /**
@@ -112,7 +114,6 @@ public class FlowEngine {
      */
     private boolean evaluateCondition(String condition, RuleContext context) {
         try {
-            JavaExpressionExecutor expressionExecutor = new JavaExpressionExecutor();
             RuleConfig conditionRule = new RuleConfig();
             conditionRule.setRuleCode("_condition_");
             conditionRule.setRuleName("Condition Check");

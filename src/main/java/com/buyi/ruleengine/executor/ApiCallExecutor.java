@@ -46,7 +46,13 @@ public class ApiCallExecutor implements RuleExecutor {
             
             String url = (String) apiConfig.get("url");
             String method = (String) apiConfig.get("method");
-            Map<String, String> headers = (Map<String, String>) apiConfig.get("headers");
+            Object headersObj = apiConfig.get("headers");
+            Map<String, String> headers = null;
+            if (headersObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> headerMap = (Map<String, String>) headersObj;
+                headers = headerMap;
+            }
             
             // 替换URL中的参数占位符
             if (context.getInputParams() != null) {

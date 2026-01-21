@@ -84,7 +84,7 @@ public class RuleEngineTest {
         context = ruleEngine.executeRule(rule, context);
         
         assertTrue(context.isSuccess());
-        assertEquals(true, context.getResult());
+        assertTrue((Boolean) context.getResult());
     }
     
     @Test
