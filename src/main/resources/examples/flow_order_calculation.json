@@ -1,0 +1,29 @@
+{
+  "flowCode": "ORDER_PRICE_CALCULATION_FLOW",
+  "flowName": "订单价格计算流程",
+  "description": "完整的订单价格计算流程：查询库存->获取基础价格->应用折扣",
+  "status": 1,
+  "steps": [
+    {
+      "step": 1,
+      "ruleCode": "QUERY_STOCK",
+      "condition": null,
+      "onSuccess": "next",
+      "onFailure": "abort"
+    },
+    {
+      "step": 2,
+      "ruleCode": "GET_BASE_PRICE",
+      "condition": "QUERY_STOCK_result != null && QUERY_STOCK_result.stock > 0",
+      "onSuccess": "next",
+      "onFailure": "abort"
+    },
+    {
+      "step": 3,
+      "ruleCode": "APPLY_DISCOUNT",
+      "condition": "discount != null && discount > 0",
+      "onSuccess": "complete",
+      "onFailure": "abort"
+    }
+  ]
+}

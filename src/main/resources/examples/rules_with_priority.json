@@ -1,0 +1,29 @@
+[
+  {
+    "ruleCode": "VALIDATE_ORDER",
+    "ruleName": "验证订单",
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "quantity > 0 && quantity <= 100",
+    "description": "验证订单数量是否合法",
+    "status": 1,
+    "priority": 200
+  },
+  {
+    "ruleCode": "CALC_TOTAL_PRICE",
+    "ruleName": "计算总价",
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "quantity * price",
+    "description": "计算订单总价格",
+    "status": 1,
+    "priority": 100
+  },
+  {
+    "ruleCode": "APPLY_DISCOUNT",
+    "ruleName": "应用折扣",
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "CALC_TOTAL_PRICE_result * (1 - discount / 100)",
+    "description": "对总价应用折扣",
+    "status": 1,
+    "priority": 50
+  }
+]

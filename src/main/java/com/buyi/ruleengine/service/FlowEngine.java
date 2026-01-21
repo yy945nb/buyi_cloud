@@ -7,7 +7,10 @@ import com.buyi.ruleengine.model.RuleFlow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,11 +23,31 @@ public class FlowEngine {
     private final RuleEngine ruleEngine;
     private final Map<String, RuleConfig> ruleConfigCache;
     private final JavaExpressionExecutor expressionExecutor;
+    private boolean enablePrioritySorting = true;
     
     public FlowEngine(RuleEngine ruleEngine) {
         this.ruleEngine = ruleEngine;
         this.ruleConfigCache = new HashMap<>();
         this.expressionExecutor = new JavaExpressionExecutor();
+    }
+    
+    /**
+     * 启用或禁用优先级排序
+     * Enable or disable priority-based sorting
+     * @param enable true to enable, false to disable
+     */
+    public void setEnablePrioritySorting(boolean enable) {
+        this.enablePrioritySorting = enable;
+        logger.info("Priority-based sorting {}", enable ? "enabled" : "disabled");
+    }
+    
+    /**
+     * 检查优先级排序是否启用
+     * Check if priority-based sorting is enabled
+     * @return true if enabled, false otherwise
+     */
+    public boolean isEnablePrioritySorting() {
+        return enablePrioritySorting;
     }
     
     /**
@@ -51,9 +74,22 @@ public class FlowEngine {
         
         logger.info("Executing flow: {} with {} steps", flow.getFlowCode(), flow.getSteps().size());
         
+        // 如果启用优先级排序，对步骤进行排序
+        // Sort steps by priority if enabled
+        List<RuleFlow.FlowStep> steps = flow.getSteps();
+        if (enablePrioritySorting) {
+            steps = sortStepsByPriority(steps);
+            if (logger.isInfoEnabled()) {
+                String orderedRules = steps.stream()
+                    .map(RuleFlow.FlowStep::getRuleCode)
+                    .collect(java.util.stream.Collectors.joining(" -> "));
+                logger.info("Steps sorted by priority: {}", orderedRules);
+            }
+        }
+        
         RuleContext currentContext = initialContext;
         
-        for (RuleFlow.FlowStep step : flow.getSteps()) {
+        for (RuleFlow.FlowStep step : steps) {
             logger.info("Executing step {}: {}", step.getStep(), step.getRuleCode());
             
             // 检查执行条件
@@ -130,6 +166,33 @@ public class FlowEngine {
             logger.error("Failed to evaluate condition: {}", condition, e);
         }
         return false;
+    }
+    
+    /**
+     * 根据优先级对步骤进行排序
+     * Sort steps by priority (higher priority first)
+     */
+    private List<RuleFlow.FlowStep> sortStepsByPriority(List<RuleFlow.FlowStep> steps) {
+        List<RuleFlow.FlowStep> sortedSteps = new ArrayList<>(steps);
+        
+        sortedSteps.sort((step1, step2) -> {
+            RuleConfig config1 = ruleConfigCache.get(step1.getRuleCode());
+            RuleConfig config2 = ruleConfigCache.get(step2.getRuleCode());
+            
+            int priority1 = (config1 != null && config1.getPriority() != null) ? config1.getPriority() : 0;
+            int priority2 = (config2 != null && config2.getPriority() != null) ? config2.getPriority() : 0;
+            
+            // 高优先级排在前面 (Higher priority first)
+            int priorityComparison = Integer.compare(priority2, priority1);
+            if (priorityComparison != 0) {
+                return priorityComparison;
+            }
+            
+            // 如果优先级相同，按原始步骤顺序 (If priority is same, keep original order)
+            return Integer.compare(step1.getStep(), step2.getStep());
+        });
+        
+        return sortedSteps;
     }
     
     /**

@@ -1,0 +1,35 @@
+{
+  "ruleCode": "DYNAMIC_QUERY_PRODUCTS",
+  "ruleName": "动态查询商品",
+  "ruleType": "SQL_QUERY",
+  "ruleContent": "SELECT * FROM products",
+  "description": "根据动态条件查询商品信息",
+  "status": 1,
+  "priority": 50,
+  "ruleParams": {
+    "inputs": [],
+    "output": "productList",
+    "dynamicSql": {
+      "whereConditions": [
+        {
+          "field": "category",
+          "operator": "=",
+          "paramName": "category"
+        },
+        {
+          "field": "price",
+          "operator": ">=",
+          "paramName": "minPrice"
+        },
+        {
+          "field": "price",
+          "operator": "<=",
+          "paramName": "maxPrice"
+        }
+      ],
+      "orderBy": "price",
+      "orderDirection": "ASC",
+      "limit": 10
+    }
+  }
+}
