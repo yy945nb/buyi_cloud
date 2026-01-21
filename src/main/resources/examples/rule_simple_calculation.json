@@ -1,0 +1,13 @@
+{
+  "ruleCode": "CALC_DISCOUNT_PRICE",
+  "ruleName": "计算折扣价格",
+  "ruleType": "JAVA_EXPR",
+  "ruleContent": "price * (1 - discount / 100)",
+  "description": "根据原价和折扣百分比计算最终价格",
+  "status": 1,
+  "priority": 100,
+  "ruleParams": {
+    "inputs": ["price", "discount"],
+    "output": "finalPrice"
+  }
+}
