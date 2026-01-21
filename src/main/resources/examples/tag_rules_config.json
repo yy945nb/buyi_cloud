@@ -1,0 +1,112 @@
+[
+  {
+    "ruleCode": "CARGO_GRADE_S_RULE",
+    "ruleName": "货盘S级规则",
+    "tagGroupId": 1,
+    "tagValueId": 101,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "sales_volume >= 1000 && profit_rate >= 0.3 && turnover_days <= 15",
+    "priority": 100,
+    "status": "ENABLED",
+    "description": "销量>=1000且利润率>=30%且周转天数<=15天，判定为S级货盘"
+  },
+  {
+    "ruleCode": "CARGO_GRADE_A_RULE",
+    "ruleName": "货盘A级规则",
+    "tagGroupId": 1,
+    "tagValueId": 102,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "sales_volume >= 500 && profit_rate >= 0.2 && turnover_days <= 30",
+    "priority": 90,
+    "status": "ENABLED",
+    "description": "销量>=500且利润率>=20%且周转天数<=30天，判定为A级货盘"
+  },
+  {
+    "ruleCode": "CARGO_GRADE_B_RULE",
+    "ruleName": "货盘B级规则",
+    "tagGroupId": 1,
+    "tagValueId": 103,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "sales_volume >= 100 && profit_rate >= 0.1 && turnover_days <= 60",
+    "priority": 80,
+    "status": "ENABLED",
+    "description": "销量>=100且利润率>=10%且周转天数<=60天，判定为B级货盘"
+  },
+  {
+    "ruleCode": "CARGO_GRADE_C_RULE",
+    "ruleName": "货盘C级规则",
+    "tagGroupId": 1,
+    "tagValueId": 104,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "sales_volume < 100 || profit_rate < 0.1 || turnover_days > 60",
+    "priority": 70,
+    "status": "ENABLED",
+    "description": "销量<100或利润率<10%或周转天数>60天，判定为C级货盘"
+  },
+  {
+    "ruleCode": "INV_CRITICAL_RULE",
+    "ruleName": "紧急库存预警规则",
+    "tagGroupId": 3,
+    "tagValueId": 301,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity / avg_daily_sales < lead_time",
+    "priority": 100,
+    "status": "ENABLED",
+    "description": "库存可用天数<补货周期，判定为紧急预警"
+  },
+  {
+    "ruleCode": "INV_WARNING_RULE",
+    "ruleName": "库存预警规则",
+    "tagGroupId": 3,
+    "tagValueId": 302,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity / avg_daily_sales < lead_time * 2",
+    "priority": 90,
+    "status": "ENABLED",
+    "description": "库存可用天数<补货周期*2，判定为预警"
+  },
+  {
+    "ruleCode": "INV_NORMAL_RULE",
+    "ruleName": "库存正常规则",
+    "tagGroupId": 3,
+    "tagValueId": 303,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity / avg_daily_sales >= lead_time * 2",
+    "priority": 80,
+    "status": "ENABLED",
+    "description": "库存可用天数>=补货周期*2，判定为正常"
+  },
+  {
+    "ruleCode": "PRICE_PREMIUM_RULE",
+    "ruleName": "高端定价规则",
+    "tagGroupId": 2,
+    "tagValueId": 201,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity < 100 && stock_age_days < 30 && !is_seasonal",
+    "priority": 100,
+    "status": "ENABLED",
+    "description": "库存紧张且非季节性商品，采用高端定价策略"
+  },
+  {
+    "ruleCode": "PRICE_CLEARANCE_RULE",
+    "ruleName": "清仓定价规则",
+    "tagGroupId": 2,
+    "tagValueId": 203,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity > 1000 || stock_age_days > 60 || is_seasonal",
+    "priority": 90,
+    "status": "ENABLED",
+    "description": "库存过多或库龄过长或季节性商品，采用清仓定价策略"
+  },
+  {
+    "ruleCode": "PRICE_STANDARD_RULE",
+    "ruleName": "标准定价规则",
+    "tagGroupId": 2,
+    "tagValueId": 202,
+    "ruleType": "JAVA_EXPR",
+    "ruleContent": "stock_quantity >= 100 && stock_quantity <= 1000",
+    "priority": 80,
+    "status": "ENABLED",
+    "description": "库存正常，采用标准定价策略"
+  }
+]
