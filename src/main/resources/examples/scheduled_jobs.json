@@ -1,0 +1,41 @@
+[
+  {
+    "jobCode": "CARGO_GRADE_DAILY_JOB",
+    "jobName": "货盘等级每日计算任务",
+    "tagGroupId": 1,
+    "cronExpression": "@daily",
+    "dataSourceType": "LOCAL",
+    "dataSourceConfig": "[{\"sku_id\":\"SKU-001\",\"sales_volume\":1500,\"profit_rate\":0.35,\"turnover_days\":10},{\"sku_id\":\"SKU-002\",\"sales_volume\":700,\"profit_rate\":0.25,\"turnover_days\":20},{\"sku_id\":\"SKU-003\",\"sales_volume\":200,\"profit_rate\":0.15,\"turnover_days\":45},{\"sku_id\":\"SKU-004\",\"sales_volume\":30,\"profit_rate\":0.08,\"turnover_days\":80}]",
+    "batchSize": 1000,
+    "maxRetries": 3,
+    "timeoutSeconds": 3600,
+    "status": "ENABLED",
+    "description": "每天凌晨执行货盘等级计算，根据销量、利润率、周转天数对SKU进行分级打标"
+  },
+  {
+    "jobCode": "INVENTORY_ALERT_HOURLY_JOB",
+    "jobName": "库存预警每小时计算任务",
+    "tagGroupId": 3,
+    "cronExpression": "@hourly",
+    "dataSourceType": "LOCAL",
+    "dataSourceConfig": "[{\"sku_id\":\"SKU-101\",\"stock_quantity\":200,\"avg_daily_sales\":50,\"lead_time\":7},{\"sku_id\":\"SKU-102\",\"stock_quantity\":600,\"avg_daily_sales\":50,\"lead_time\":7},{\"sku_id\":\"SKU-103\",\"stock_quantity\":1200,\"avg_daily_sales\":50,\"lead_time\":7}]",
+    "batchSize": 500,
+    "maxRetries": 2,
+    "timeoutSeconds": 1800,
+    "status": "ENABLED",
+    "description": "每小时执行库存预警计算，根据库存量、日均销量、补货周期对SKU进行预警等级打标"
+  },
+  {
+    "jobCode": "PRICING_STRATEGY_WEEKLY_JOB",
+    "jobName": "定价策略每周计算任务",
+    "tagGroupId": 2,
+    "cronExpression": "@weekly",
+    "dataSourceType": "LOCAL",
+    "dataSourceConfig": "[{\"sku_id\":\"SKU-201\",\"current_price\":100.0,\"market_avg_price\":80.0,\"stock_quantity\":50,\"stock_age_days\":15,\"is_seasonal\":false},{\"sku_id\":\"SKU-202\",\"current_price\":100.0,\"market_avg_price\":95.0,\"stock_quantity\":500,\"stock_age_days\":30,\"is_seasonal\":false}]",
+    "batchSize": 500,
+    "maxRetries": 3,
+    "timeoutSeconds": 7200,
+    "status": "DISABLED",
+    "description": "每周执行定价策略计算，根据库存、库龄、季节性等因素对SKU进行定价策略打标"
+  }
+]
