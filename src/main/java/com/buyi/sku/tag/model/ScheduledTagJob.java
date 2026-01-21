@@ -11,6 +11,12 @@ import java.util.Map;
  */
 public class ScheduledTagJob {
     
+    // Default configuration constants
+    public static final int DEFAULT_BATCH_SIZE = 1000;
+    public static final int DEFAULT_MAX_RETRIES = 3;
+    public static final int DEFAULT_TIMEOUT_SECONDS = 3600;
+    public static final String DEFAULT_STATUS = "DISABLED";
+    
     private Long id;
     private String jobCode;
     private String jobName;
@@ -37,10 +43,10 @@ public class ScheduledTagJob {
     
     // Constructors
     public ScheduledTagJob() {
-        this.batchSize = 1000;
-        this.maxRetries = 3;
-        this.timeoutSeconds = 3600;
-        this.status = "DISABLED";
+        this.batchSize = DEFAULT_BATCH_SIZE;
+        this.maxRetries = DEFAULT_MAX_RETRIES;
+        this.timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
+        this.status = DEFAULT_STATUS;
     }
     
     public ScheduledTagJob(String jobCode, String jobName, Long tagGroupId, String cronExpression) {

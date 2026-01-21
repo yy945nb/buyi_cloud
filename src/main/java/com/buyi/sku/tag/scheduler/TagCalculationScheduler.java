@@ -30,6 +30,13 @@ public class TagCalculationScheduler {
     
     private static final Logger logger = LoggerFactory.getLogger(TagCalculationScheduler.class);
     
+    // Time constants (in milliseconds)
+    private static final long MILLIS_PER_MINUTE = 60_000L;
+    private static final long MILLIS_PER_HOUR = 3_600_000L;
+    private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final long MILLIS_PER_WEEK = 604_800_000L;
+    private static final long MIN_DELAY_MILLIS = 1_000L;
+    
     private final TagRuleService tagRuleService;
     private final ScheduledExecutorService schedulerExecutor;
     private final ExecutorService taskExecutor;
@@ -516,25 +523,25 @@ public class TagCalculationScheduler {
     private long[] parseCronExpression(String cronExpression) {
         if (cronExpression == null || cronExpression.isEmpty()) {
             // Default: execute hourly
-            return new long[]{60000, 3600000};
+            return new long[]{MILLIS_PER_MINUTE, MILLIS_PER_HOUR};
         }
         
         switch (cronExpression.toLowerCase()) {
             case "@hourly":
-                return new long[]{calculateDelayToNextHour(), 3600000};
+                return new long[]{calculateDelayToNextHour(), MILLIS_PER_HOUR};
             case "@daily":
-                return new long[]{calculateDelayToNextDay(), 86400000};
+                return new long[]{calculateDelayToNextDay(), MILLIS_PER_DAY};
             case "@weekly":
-                return new long[]{calculateDelayToNextWeek(), 604800000};
+                return new long[]{calculateDelayToNextWeek(), MILLIS_PER_WEEK};
             case "@minutely":
-                return new long[]{60000, 60000};
+                return new long[]{MILLIS_PER_MINUTE, MILLIS_PER_MINUTE};
             default:
                 try {
                     long interval = Long.parseLong(cronExpression);
                     return new long[]{interval, interval};
                 } catch (NumberFormatException e) {
                     // Default to hourly
-                    return new long[]{60000, 3600000};
+                    return new long[]{MILLIS_PER_MINUTE, MILLIS_PER_HOUR};
                 }
         }
     }
@@ -545,7 +552,7 @@ public class TagCalculationScheduler {
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        return Math.max(1000, cal.getTimeInMillis() - System.currentTimeMillis());
+        return Math.max(MIN_DELAY_MILLIS, cal.getTimeInMillis() - System.currentTimeMillis());
     }
     
     private long calculateDelayToNextDay() {
@@ -555,7 +562,7 @@ public class TagCalculationScheduler {
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        return Math.max(1000, cal.getTimeInMillis() - System.currentTimeMillis());
+        return Math.max(MIN_DELAY_MILLIS, cal.getTimeInMillis() - System.currentTimeMillis());
     }
     
     private long calculateDelayToNextWeek() {
@@ -566,7 +573,7 @@ public class TagCalculationScheduler {
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        return Math.max(1000, cal.getTimeInMillis() - System.currentTimeMillis());
+        return Math.max(MIN_DELAY_MILLIS, cal.getTimeInMillis() - System.currentTimeMillis());
     }
     
     /**

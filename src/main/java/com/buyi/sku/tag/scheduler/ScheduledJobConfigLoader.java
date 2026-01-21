@@ -140,7 +140,17 @@ public class ScheduledJobConfigLoader {
     private ScheduledTagJob parseJobConfig(JsonObject jsonObject) {
         ScheduledTagJob job = new ScheduledTagJob();
         
-        // 必填字段
+        // 必填字段 - 添加null检查
+        if (!jsonObject.has("jobCode") || jsonObject.get("jobCode").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: jobCode");
+        }
+        if (!jsonObject.has("jobName") || jsonObject.get("jobName").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: jobName");
+        }
+        if (!jsonObject.has("tagGroupId") || jsonObject.get("tagGroupId").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: tagGroupId");
+        }
+        
         job.setJobCode(jsonObject.get("jobCode").getAsString());
         job.setJobName(jsonObject.get("jobName").getAsString());
         job.setTagGroupId(jsonObject.get("tagGroupId").getAsLong());

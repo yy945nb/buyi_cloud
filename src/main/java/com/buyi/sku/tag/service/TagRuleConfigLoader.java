@@ -171,7 +171,26 @@ public class TagRuleConfigLoader {
     private SkuTagRule parseRuleConfig(JsonObject jsonObject) {
         SkuTagRule rule = new SkuTagRule();
         
-        // 必填字段
+        // 必填字段 - 添加null检查
+        if (!jsonObject.has("ruleCode") || jsonObject.get("ruleCode").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: ruleCode");
+        }
+        if (!jsonObject.has("ruleName") || jsonObject.get("ruleName").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: ruleName");
+        }
+        if (!jsonObject.has("tagGroupId") || jsonObject.get("tagGroupId").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: tagGroupId");
+        }
+        if (!jsonObject.has("tagValueId") || jsonObject.get("tagValueId").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: tagValueId");
+        }
+        if (!jsonObject.has("ruleType") || jsonObject.get("ruleType").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: ruleType");
+        }
+        if (!jsonObject.has("ruleContent") || jsonObject.get("ruleContent").isJsonNull()) {
+            throw new IllegalArgumentException("Missing required field: ruleContent");
+        }
+        
         rule.setRuleCode(jsonObject.get("ruleCode").getAsString());
         rule.setRuleName(jsonObject.get("ruleName").getAsString());
         rule.setTagGroupId(jsonObject.get("tagGroupId").getAsLong());
