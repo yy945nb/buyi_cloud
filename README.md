@@ -6,6 +6,7 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 
 1. **规则引擎 (Rule Engine)** - 灵活的业务规则执行框架，支持Java表达式、SQL查询、API调用
 2. **SKU标签系统 (SKU Tagging System)** - 商品标签管理系统，支持规则自动打标和人工打标
+3. **数据仓库 (Data Warehouse)** - 私有化部署的数据仓库解决方案，支持OLAP多维分析
 
 ## 主要功能模块 (Main Features)
 
@@ -28,6 +29,18 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 - ✅ 完整的历史审计追溯
 - ✅ 批量处理与查询API
 - ✅ 货盘S/A/B/C等级标签示例
+
+### 3. 数据仓库 (Data Warehouse)
+
+详细文档请参考：[DATA_WAREHOUSE_GUIDE.md](DATA_WAREHOUSE_GUIDE.md)
+
+- ✅ 维度建模（时间、商品、店铺、仓库、地区）
+- ✅ 事实表设计（销售事实、库存事实、采购事实）
+- ✅ ETL数据处理（抽取、转换、加载）
+- ✅ 聚合表支持（日/周/月汇总）
+- ✅ OLAP多维分析（切片、切块、钻取、旋转）
+- ✅ 定时同步调度
+- ✅ SCD Type 2 缓慢变化维度支持
 
 ## 快速开始 (Quick Start)
 
@@ -57,6 +70,9 @@ mysql -u username -p database < rule_engine_schema.sql
 
 # 创建SKU标签系统表（包含货盘等级示例数据）
 mysql -u username -p database < sku_tag_schema.sql
+
+# 创建数据仓库表
+mysql -u username -p datawarehouse < datawarehouse_schema.sql
 ```
 
 ### 5. 运行示例
@@ -67,6 +83,9 @@ mvn exec:java -Dexec.mainClass="com.buyi.ruleengine.RuleEngineExample"
 
 # 运行SKU标签系统示例
 mvn exec:java -Dexec.mainClass="com.buyi.sku.tag.SkuTaggingExample"
+
+# 运行数据仓库示例
+mvn exec:java -Dexec.mainClass="com.buyi.datawarehouse.DataWarehouseDemo"
 ```
 
 ## 项目结构 (Project Structure)
@@ -79,15 +98,22 @@ buyi_cloud/
 │   │   ├── service/         # 规则服务
 │   │   ├── executor/        # 规则执行器
 │   │   └── enums/           # 枚举类型
-│   └── sku/tag/             # SKU标签系统模块
-│       ├── model/           # 标签模型
-│       ├── service/         # 标签服务
-│       └── enums/           # 枚举类型
+│   ├── sku/tag/             # SKU标签系统模块
+│   │   ├── model/           # 标签模型
+│   │   ├── service/         # 标签服务
+│   │   └── enums/           # 枚举类型
+│   └── datawarehouse/       # 数据仓库模块
+│       ├── model/           # 数仓模型（维度表、事实表、聚合表）
+│       ├── service/         # ETL和OLAP服务
+│       ├── config/          # 配置
+│       └── scheduler/       # 调度器
 ├── src/test/java/           # 测试代码
 ├── rule_engine_schema.sql   # 规则引擎数据库表
 ├── sku_tag_schema.sql       # SKU标签系统数据库表
+├── datawarehouse_schema.sql # 数据仓库数据库表
 ├── RULE_ENGINE_README.md    # 规则引擎文档
-└── SKU_TAGGING_GUIDE.md     # SKU标签系统文档
+├── SKU_TAGGING_GUIDE.md     # SKU标签系统文档
+└── DATA_WAREHOUSE_GUIDE.md  # 数据仓库文档
 ```
 
 ## 核心概念 (Core Concepts)
@@ -146,7 +172,8 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 
 - ✅ 规则引擎测试：24个测试用例
 - ✅ SKU标签系统测试：16个测试用例
-- ✅ 总计：40个测试用例，全部通过
+- ✅ 数据仓库测试：18个测试用例
+- ✅ 总计：58个测试用例
 
 ```bash
 [INFO] Results:
@@ -173,6 +200,7 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 - [规则引擎开发文档](RULE_ENGINE_README.md)
 - [规则引擎JSON功能指南](JSON_FEATURES_GUIDE.md)
 - [SKU标签系统开发文档](SKU_TAGGING_GUIDE.md)
+- [数据仓库部署指南](DATA_WAREHOUSE_GUIDE.md)
 
 ## 贡献指南 (Contributing)
 
