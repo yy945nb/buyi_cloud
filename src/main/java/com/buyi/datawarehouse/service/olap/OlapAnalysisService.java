@@ -8,10 +8,7 @@ import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * OLAP分析服务
@@ -21,6 +18,14 @@ import java.util.Map;
  */
 public class OlapAnalysisService {
     private static final Logger logger = LoggerFactory.getLogger(OlapAnalysisService.class);
+    
+    /** 允许在过滤条件中使用的列名白名单 */
+    private static final Set<String> ALLOWED_FILTER_COLUMNS = new HashSet<>(Arrays.asList(
+            "date_key", "product_key", "shop_key", "warehouse_key", "region_key",
+            "p.product_key", "p.sku_code", "p.category_id", "p.is_current",
+            "s.shop_key", "s.platform", "s.marketplace", "s.is_current",
+            "a.date_key", "a.product_key", "a.shop_key"
+    ));
     
     private final DataSource dataSource;
     
@@ -33,6 +38,24 @@ public class OlapAnalysisService {
      */
     public enum TimeGranularity {
         DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY
+    }
+    
+    /**
+     * 将LocalDate转换为日期键（YYYYMMDD格式的整数）
+     * @param date 日期
+     * @return 日期键
+     */
+    private static int toDateKey(LocalDate date) {
+        return Integer.parseInt(date.format(DateTimeFormatter.BASIC_ISO_DATE));
+    }
+    
+    /**
+     * 验证过滤条件列名是否在白名单中
+     * @param columnName 列名
+     * @return 是否允许
+     */
+    private static boolean isAllowedFilterColumn(String columnName) {
+        return ALLOWED_FILTER_COLUMNS.contains(columnName.toLowerCase());
     }
     
     /**
@@ -76,8 +99,8 @@ public class OlapAnalysisService {
         sql.append("GROUP BY ").append(periodColumn).append(" ");
         sql.append("ORDER BY period");
         
-        int startKey = Integer.parseInt(startDate.format(DateTimeFormatter.BASIC_ISO_DATE));
-        int endKey = Integer.parseInt(endDate.format(DateTimeFormatter.BASIC_ISO_DATE));
+        int startKey = toDateKey(startDate);
+        int endKey = toDateKey(endDate);
         
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql.toString())) {
@@ -146,8 +169,8 @@ public class OlapAnalysisService {
         sql.append("ORDER BY total_sales DESC ");
         sql.append("LIMIT ?");
         
-        int startKey = Integer.parseInt(startDate.format(DateTimeFormatter.BASIC_ISO_DATE));
-        int endKey = Integer.parseInt(endDate.format(DateTimeFormatter.BASIC_ISO_DATE));
+        int startKey = toDateKey(startDate);
+        int endKey = toDateKey(endDate);
         
         List<ProductRankResult> results = new ArrayList<>();
         
@@ -213,8 +236,8 @@ public class OlapAnalysisService {
                 "GROUP BY s.shop_key, s.shop_code, s.shop_name, s.platform " +
                 "ORDER BY total_sales DESC";
         
-        int startKey = Integer.parseInt(startDate.format(DateTimeFormatter.BASIC_ISO_DATE));
-        int endKey = Integer.parseInt(endDate.format(DateTimeFormatter.BASIC_ISO_DATE));
+        int startKey = toDateKey(startDate);
+        int endKey = toDateKey(endDate);
         
         List<ShopPerformanceResult> results = new ArrayList<>();
         
@@ -274,7 +297,7 @@ public class OlapAnalysisService {
             sql.append("AND i.product_key = ? ");
         }
         
-        int todayKey = Integer.parseInt(LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
+        int todayKey = toDateKey(LocalDate.now());
         
         InventoryTurnoverResult result = new InventoryTurnoverResult();
         
@@ -313,8 +336,9 @@ public class OlapAnalysisService {
      * 多维分析查询
      * @param dimensions 维度列表
      * @param measures 度量列表
-     * @param filters 过滤条件
+     * @param filters 过滤条件（键必须在白名单中）
      * @return 查询结果
+     * @throws IllegalArgumentException 如果过滤条件列名不在白名单中
      */
     public List<Map<String, Object>> multiDimensionalQuery(
             List<String> dimensions, 
@@ -342,11 +366,19 @@ public class OlapAnalysisService {
         sql.append(" LEFT JOIN dw_dim_shop s ON a.shop_key = s.shop_key ");
         sql.append(" WHERE 1=1 ");
         
-        // 添加过滤条件
+        // 添加过滤条件（验证列名防止SQL注入）
         List<Object> params = new ArrayList<>();
         if (filters != null) {
             for (Map.Entry<String, Object> entry : filters.entrySet()) {
-                sql.append(" AND ").append(entry.getKey()).append(" = ?");
+                String columnName = entry.getKey();
+                // 验证列名是否在允许的白名单中
+                if (!isAllowedFilterColumn(columnName)) {
+                    logger.warn("Rejected filter column '{}' - not in allowed list", columnName);
+                    throw new IllegalArgumentException(
+                            "Filter column '" + columnName + "' is not allowed. " +
+                            "Allowed columns: " + ALLOWED_FILTER_COLUMNS);
+                }
+                sql.append(" AND ").append(columnName).append(" = ?");
                 params.add(entry.getValue());
             }
         }

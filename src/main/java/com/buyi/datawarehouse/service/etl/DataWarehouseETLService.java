@@ -25,13 +25,18 @@ import java.util.Map;
 public class DataWarehouseETLService {
     private static final Logger logger = LoggerFactory.getLogger(DataWarehouseETLService.class);
     
+    /** 默认维度键，用于处理无法关联到有效维度的情况 */
+    private static final Long DEFAULT_DIMENSION_KEY = 1L;
+    
     private final DataSource sourceDataSource;
     private final DataSource targetDataSource;
     private int batchSize = 1000;
     
     // 维度缓存
     private Map<Long, Long> productKeyCache = new HashMap<>();
+    private Map<String, Long> productSkuKeyCache = new HashMap<>();
     private Map<Long, Long> shopKeyCache = new HashMap<>();
+    private Map<String, Long> shopNameKeyCache = new HashMap<>();
     private Map<Long, Long> warehouseKeyCache = new HashMap<>();
     
     public DataWarehouseETLService(DataSource sourceDataSource, DataSource targetDataSource) {
@@ -460,9 +465,9 @@ public class DataWarehouseETLService {
                                 .format(DateTimeFormatter.BASIC_ISO_DATE)) :
                         Integer.parseInt(LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
                 
-                // 获取维度键（简化处理，实际应该通过SKU关联）
-                Long productKey = 1L; // 默认值
-                Long shopKey = 1L; // 默认值
+                // 获取维度键（通过SKU和店铺名称查找缓存）
+                Long productKey = productSkuKeyCache.getOrDefault(sku, DEFAULT_DIMENSION_KEY);
+                Long shopKey = DEFAULT_DIMENSION_KEY;
                 
                 insertPs.setInt(1, dateKey);
                 insertPs.setLong(2, productKey);
@@ -522,9 +527,10 @@ public class DataWarehouseETLService {
                 int availableQty = rs.getInt("available_qty");
                 int reservedQty = rs.getInt("reserved_qty");
                 BigDecimal unitCost = rs.getBigDecimal("unit_cost");
+                String sku = rs.getString("sku");
                 
-                Long productKey = 1L; // 默认值
-                Long warehouseKey = warehouseKeyCache.getOrDefault(warehouseId, 1L);
+                Long productKey = productSkuKeyCache.getOrDefault(sku, DEFAULT_DIMENSION_KEY);
+                Long warehouseKey = warehouseKeyCache.getOrDefault(warehouseId, DEFAULT_DIMENSION_KEY);
                 
                 BigDecimal inventoryValue = unitCost != null ? 
                         unitCost.multiply(BigDecimal.valueOf(onHandQty)) : BigDecimal.ZERO;
@@ -599,14 +605,20 @@ public class DataWarehouseETLService {
      */
     private void loadProductKeyCache() {
         productKeyCache.clear();
-        String sql = "SELECT product_key, product_id FROM dw_dim_product WHERE is_current = 1";
+        productSkuKeyCache.clear();
+        String sql = "SELECT product_key, product_id, sku_code FROM dw_dim_product WHERE is_current = 1";
         
         try (Connection conn = targetDataSource.getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             
             while (rs.next()) {
-                productKeyCache.put(rs.getLong("product_id"), rs.getLong("product_key"));
+                Long productKey = rs.getLong("product_key");
+                productKeyCache.put(rs.getLong("product_id"), productKey);
+                String skuCode = rs.getString("sku_code");
+                if (skuCode != null) {
+                    productSkuKeyCache.put(skuCode, productKey);
+                }
             }
             logger.info("Loaded {} product keys to cache", productKeyCache.size());
         } catch (SQLException e) {
