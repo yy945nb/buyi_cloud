@@ -304,6 +304,14 @@ public class DslRuleChainEngine {
     
     /**
      * 执行分支节点
+     * 
+     * 注意: 当前实现为简化版本，采用顺序执行第一个分支的方式。
+     * 真正的并行执行需要使用线程池，并配合Join节点实现同步等待。
+     * 
+     * TODO: 在生产环境中，可以使用ExecutorService实现真正的并行执行：
+     * - 为每个分支创建一个独立的执行上下文副本
+     * - 并行执行所有分支
+     * - 在Join节点收集所有分支结果
      */
     private String executeForkNode(DslNode node, DslExecutionContext context) {
         if (node.getBranchNodeIds() == null || node.getBranchNodeIds().isEmpty()) {
@@ -311,14 +319,15 @@ public class DslRuleChainEngine {
             return node.getNextNodeId();
         }
         
-        // 简化实现：顺序执行所有分支
-        // 在实际生产环境中，可以使用线程池并行执行
+        // 当前简化实现：标记分支并顺序执行第一个分支
+        // 这种实现适用于顺序处理场景，不是真正的并行执行
         for (String branchId : node.getBranchNodeIds()) {
-            context.setBranchResult(branchId, "executed");
+            context.setBranchResult(branchId, "pending");
         }
         
         context.addTrace(node.getNodeId(), 
-                "Fork executed with " + node.getBranchNodeIds().size() + " branches", true);
+                "Fork node: " + node.getBranchNodeIds().size() + 
+                " branches registered (sequential execution mode)", true);
         
         // 返回第一个分支作为下一个节点
         return node.getBranchNodeIds().get(0);
@@ -326,12 +335,21 @@ public class DslRuleChainEngine {
     
     /**
      * 执行合并节点
+     * 
+     * 注意: 当前实现为简化版本，不会真正等待分支完成。
+     * 在顺序执行模式下，当执行到Join节点时，所有之前的节点已经执行完毕。
+     * 
+     * TODO: 在并行执行场景中，需要实现真正的等待机制：
+     * - 使用CountDownLatch或CompletableFuture等待所有分支
+     * - 合并各分支的执行结果
+     * - 处理分支执行异常
      */
     private String executeJoinNode(DslNode node, DslExecutionContext context) {
-        // 简化实现：直接继续执行
-        // 在实际生产环境中，需要等待所有分支完成
+        // 当前简化实现：在顺序执行模式下直接继续
+        // 所有分支结果已在各自节点执行时设置到context中
         
-        context.addTrace(node.getNodeId(), "Join node executed", true);
+        context.addTrace(node.getNodeId(), 
+                "Join node executed (sequential mode, no actual waiting)", true);
         
         return node.getNextNodeId();
     }

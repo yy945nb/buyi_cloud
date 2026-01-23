@@ -1,13 +1,18 @@
 package com.buyi.ruleengine.dsl.model;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * DSL执行上下文 - 在规则链执行过程中保持状态
  * DSL Execution Context - Maintains state during rule chain execution
+ * 
+ * 注意：此类使用线程安全的集合以支持潜在的并行执行场景。
+ * Note: This class uses thread-safe collections to support potential parallel execution scenarios.
  */
 public class DslExecutionContext {
     
@@ -18,33 +23,34 @@ public class DslExecutionContext {
     
     /**
      * 变量存储（规则执行过程中产生的变量）
+     * 使用ConcurrentHashMap保证线程安全
      */
     private Map<String, Object> variables;
     
     /**
      * 最终结果
      */
-    private Object result;
+    private volatile Object result;
     
     /**
      * 执行是否成功
      */
-    private boolean success;
+    private volatile boolean success;
     
     /**
      * 错误信息
      */
-    private String errorMessage;
+    private volatile String errorMessage;
     
     /**
      * 当前节点ID
      */
-    private String currentNodeId;
+    private volatile String currentNodeId;
     
     /**
      * 执行深度
      */
-    private int executionDepth;
+    private volatile int executionDepth;
     
     /**
      * 执行开始时间
@@ -54,29 +60,31 @@ public class DslExecutionContext {
     /**
      * 总执行时间（毫秒）
      */
-    private long totalExecutionTime;
+    private volatile long totalExecutionTime;
     
     /**
      * 执行追踪列表
+     * 使用CopyOnWriteArrayList保证线程安全
      */
     private List<ExecutionTrace> executionTraces;
     
     /**
      * 分支执行结果（用于FORK/JOIN）
+     * 使用ConcurrentHashMap保证线程安全
      */
     private Map<String, Object> branchResults;
     
     /**
      * 是否已终止
      */
-    private boolean terminated;
+    private volatile boolean terminated;
     
     // Constructors
     public DslExecutionContext() {
-        this.inputParams = new HashMap<>();
-        this.variables = new HashMap<>();
-        this.executionTraces = new ArrayList<>();
-        this.branchResults = new HashMap<>();
+        this.inputParams = new ConcurrentHashMap<>();
+        this.variables = new ConcurrentHashMap<>();
+        this.executionTraces = new CopyOnWriteArrayList<>();
+        this.branchResults = new ConcurrentHashMap<>();
         this.success = true;
         this.executionDepth = 0;
         this.startTime = System.currentTimeMillis();

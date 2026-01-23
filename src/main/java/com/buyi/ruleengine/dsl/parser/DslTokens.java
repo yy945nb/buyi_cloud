@@ -10,6 +10,10 @@ public final class DslTokens {
         // Utility class, no instantiation
     }
     
+    // 内部节点ID常量 (Internal Node ID Constants)
+    public static final String INTERNAL_START_NODE_ID = "_start_";
+    public static final String INTERNAL_END_NODE_ID = "_end_";
+    
     // 块关键字 (Block Keywords)
     public static final String CHAIN = "chain";
     public static final String NODE = "node";

@@ -376,7 +376,7 @@ public class DslParser {
                     
                     // 创建隐式开始节点
                     DslNode startNode = new DslNode();
-                    startNode.setNodeId("_start_");
+                    startNode.setNodeId(DslTokens.INTERNAL_START_NODE_ID);
                     startNode.setNodeName("Start");
                     startNode.setNodeType(DslNode.NodeType.START);
                     startNode.setNextNodeId(startNodeId);
@@ -397,7 +397,7 @@ public class DslParser {
     private DslNode parseStartNode() {
         DslNode node = new DslNode();
         node.setNodeType(DslNode.NodeType.START);
-        node.setNodeId("_start_");
+        node.setNodeId(DslTokens.INTERNAL_START_NODE_ID);
         node.setNodeName("Start");
         
         skipWhitespace();
@@ -416,7 +416,7 @@ public class DslParser {
     private DslNode parseEndNode(String identifier) {
         DslNode node = new DslNode();
         node.setNodeType(DslNode.NodeType.END);
-        node.setNodeId("_end_");
+        node.setNodeId(DslTokens.INTERNAL_END_NODE_ID);
         node.setNodeName("End");
         
         skipWhitespace();
@@ -1085,7 +1085,7 @@ public class DslParser {
         // 验证节点引用
         for (DslNode node : chain.getNodeList()) {
             if (node.getNextNodeId() != null && !chain.hasNode(node.getNextNodeId()) 
-                    && !"_end_".equals(node.getNextNodeId())) {
+                    && !DslTokens.INTERNAL_END_NODE_ID.equals(node.getNextNodeId())) {
                 errors.add("Node '" + node.getNodeId() + "' references non-existent node: " + node.getNextNodeId());
             }
             
