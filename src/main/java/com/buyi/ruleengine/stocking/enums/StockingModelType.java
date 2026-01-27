@@ -22,7 +22,14 @@ public enum StockingModelType {
      * 断货点临时备货模型
      * 基于断货点预测进行紧急备货
      */
-    STOCKOUT_EMERGENCY("STOCKOUT_EMERGENCY", "断货点临时备货模型");
+    STOCKOUT_EMERGENCY("STOCKOUT_EMERGENCY", "断货点临时备货模型"),
+    
+    /**
+     * 新款/爆款备货模型
+     * 针对短时间销量暴涨导致多区域断货的商品
+     * 适用于新品上市或爆款商品的紧急备货策略
+     */
+    NEW_SKU("NEW_SKU", "新款爆款备货模型");
     
     private final String code;
     private final String description;
