@@ -39,7 +39,7 @@ public class NewSkuStockupBusinessTest {
     public void testIsHotSellingProduct_SalesSurge() {
         // 销量暴涨场景：7天销量是30天平均的2倍以上
         SalesHistoryData salesHistory = createSalesHistory(3000, 2000, 1500);
-        // 30天日均=100, 7天日均=214, 比率>2.0
+        // 30天日均=3000/30=100, 7天日均=1500/7≈214.3, 比率≈2.14>2.0
         
         boolean isHotSelling = service.isHotSellingProduct(salesHistory);
         

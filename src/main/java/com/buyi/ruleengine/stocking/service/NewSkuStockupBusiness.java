@@ -63,6 +63,15 @@ public class NewSkuStockupBusiness {
     /** 销量暴涨判定阈值（7天销量相对于30天平均的倍数） */
     private static final BigDecimal SALES_SURGE_THRESHOLD = new BigDecimal("2.0");
     
+    /** 高速增长时的系数调整 */
+    private static final BigDecimal HIGH_GROWTH_COEFFICIENT = new BigDecimal("1.3");
+    
+    /** 中速增长时的系数调整 */
+    private static final BigDecimal MEDIUM_GROWTH_COEFFICIENT = new BigDecimal("1.1");
+    
+    /** 双区域断货时的系数调整 */
+    private static final BigDecimal DUAL_REGION_STOCKOUT_COEFFICIENT = new BigDecimal("1.15");
+    
     /** 触发爆款模型的最少风险区域数 */
     private static final int MIN_RISK_REGIONS_FOR_HOT_MODEL = 2;
     
@@ -556,9 +565,9 @@ public class NewSkuStockupBusiness {
                 BigDecimal growthRatio = avg7.divide(avg30, CALCULATION_SCALE, RoundingMode.HALF_UP);
                 // 销量增长越快，系数越高
                 if (growthRatio.compareTo(new BigDecimal("3.0")) >= 0) {
-                    coefficient = coefficient.multiply(new BigDecimal("1.3"));
+                    coefficient = coefficient.multiply(HIGH_GROWTH_COEFFICIENT);
                 } else if (growthRatio.compareTo(SALES_SURGE_THRESHOLD) >= 0) {
-                    coefficient = coefficient.multiply(new BigDecimal("1.1"));
+                    coefficient = coefficient.multiply(MEDIUM_GROWTH_COEFFICIENT);
                 }
             }
         }
@@ -567,7 +576,7 @@ public class NewSkuStockupBusiness {
         if (analysis.getStockoutRegionCount() >= 3) {
             coefficient = coefficient.multiply(MULTI_REGION_URGENCY_COEFFICIENT);
         } else if (analysis.getStockoutRegionCount() >= 2) {
-            coefficient = coefficient.multiply(new BigDecimal("1.15"));
+            coefficient = coefficient.multiply(DUAL_REGION_STOCKOUT_COEFFICIENT);
         }
         
         return coefficient.setScale(2, RoundingMode.HALF_UP);

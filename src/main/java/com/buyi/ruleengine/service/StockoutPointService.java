@@ -35,6 +35,9 @@ public class StockoutPointService {
 
     /** 连续未发货触发风险的周数阈值 */
     private static final int CONSECUTIVE_MISSED_THRESHOLD = 5;
+    
+    /** 触发爆款备货模型的最少风险区域数 */
+    private static final int MIN_RISK_REGIONS_FOR_HOT_MODEL = 2;
 
     /**
      * 评估断货风险监控点
@@ -625,7 +628,7 @@ public class StockoutPointService {
                 regionInventories, dailyAvg, regionSalesRatios,
                 regionShippingDays, safetyStockDays, baseDate);
         
-        // 当2个及以上区域存在风险时，触发爆款备货模型
-        return riskCount >= 2;
+        // 当达到最少风险区域数时，触发爆款备货模型
+        return riskCount >= MIN_RISK_REGIONS_FOR_HOT_MODEL;
     }
 }
