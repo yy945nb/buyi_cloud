@@ -9,15 +9,18 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * 断货点分析服务
  * Stockout Point Analysis Service
- * 
+ * <p>
  * 将未来若干天按固定间隔为监控点，逐点预测库存并判断风险。
- * 
+ * <p>
  * 风险规则：
  * - 若 projectedInventory <= 0 => OUTAGE（断货）
  * - 若 projectedInventory < safetyStock（= dailyAvg * safetyStockDays）=> AT_RISK（风险）
@@ -27,13 +30,19 @@ public class StockoutPointService {
 
     private static final Logger logger = LoggerFactory.getLogger(StockoutPointService.class);
 
-    /** 默认监控间隔天数 */
+    /**
+     * 默认监控间隔天数
+     */
     private static final int DEFAULT_INTERVAL_DAYS = 7;
 
-    /** 默认计算精度 */
+    /**
+     * 默认计算精度
+     */
     private static final int CALCULATION_SCALE = 4;
 
-    /** 连续未发货触发风险的周数阈值 */
+    /**
+     * 连续未发货触发风险的周数阈值
+     */
     private static final int CONSECUTIVE_MISSED_THRESHOLD = 5;
     
     /** 触发爆款备货模型的最少风险区域数 */
@@ -54,16 +63,15 @@ public class StockoutPointService {
      * @param baseDate         基准日期（通常 LocalDate.now()），监控点为 baseDate + offset
      * @return 监控点响应（包含所有监控点列表）
      */
-    public CosOosPointResponse evaluateWithWeeklyShipments(
-            Integer currentInventory,
-            BigDecimal dailyAvg,
-            Map<LocalDate, Integer> shipmentQtyMap,
-            Integer productionDays,
-            Integer shippingDays,
-            Integer safetyStockDays,
-            Integer intervalDays,
-            Integer horizonDays,
-            LocalDate baseDate) {
+    public CosOosPointResponse evaluateWithWeeklyShipments(Integer currentInventory,
+                                                           BigDecimal dailyAvg,
+                                                           Map<LocalDate, Integer> shipmentQtyMap,
+                                                           Integer productionDays,
+                                                           Integer shippingDays,
+                                                           Integer safetyStockDays,
+                                                           Integer intervalDays,
+                                                           Integer horizonDays,
+                                                           LocalDate baseDate) {
 
         // 初始化参数
         EvaluationParams params = buildParams(currentInventory, dailyAvg, shipmentQtyMap,
@@ -82,16 +90,15 @@ public class StockoutPointService {
     /**
      * 构建评估参数（包含默认值处理）
      */
-    private EvaluationParams buildParams(
-            Integer currentInventory,
-            BigDecimal dailyAvg,
-            Map<LocalDate, Integer> shipmentQtyMap,
-            Integer productionDays,
-            Integer shippingDays,
-            Integer safetyStockDays,
-            Integer intervalDays,
-            Integer horizonDays,
-            LocalDate baseDate) {
+    private EvaluationParams buildParams(Integer currentInventory,
+                                         BigDecimal dailyAvg,
+                                         Map<LocalDate, Integer> shipmentQtyMap,
+                                         Integer productionDays,
+                                         Integer shippingDays,
+                                         Integer safetyStockDays,
+                                         Integer intervalDays,
+                                         Integer horizonDays,
+                                         LocalDate baseDate) {
 
         EvaluationParams params = new EvaluationParams();
 
@@ -99,9 +106,9 @@ public class StockoutPointService {
         params.baseDate = (baseDate == null) ? LocalDate.now() : baseDate;
 
         // 时间参数
-        params.productionDays = defaultIfNull(productionDays, 0);
-        params.shippingDays = defaultIfNull(shippingDays, 0);
-        params.safetyStockDays = defaultIfNull(safetyStockDays, 0);
+        params.productionDays = defaultIfNull(productionDays, 25);
+        params.shippingDays = defaultIfNull(shippingDays, 30);
+        params.safetyStockDays = defaultIfNull(safetyStockDays, 35);
         params.intervalDays = (intervalDays == null || intervalDays <= 0) ? DEFAULT_INTERVAL_DAYS : intervalDays;
 
         // 预测总天数
@@ -179,8 +186,8 @@ public class StockoutPointService {
             LocalDate windowStart = params.baseDate.plusDays((windowNum - 1) * params.intervalDays + 1);
 
             // 累加在此窗口内到达的补货
-            while (arrivalIndex < sortedArrivals.size() && 
-                   !sortedArrivals.get(arrivalIndex).isAfter(windowEnd)) {
+            while (arrivalIndex < sortedArrivals.size() &&
+                    !sortedArrivals.get(arrivalIndex).isAfter(windowEnd)) {
                 LocalDate arrivalDate = sortedArrivals.get(arrivalIndex);
                 cumulativeArrived = cumulativeArrived.add(arrivalMap.getOrDefault(arrivalDate, BigDecimal.ZERO));
                 arrivalIndex++;
