@@ -222,7 +222,7 @@ public class StockoutPointService {
             CosOosPointDetail detail = buildMonitorPointDetail(
                     windowStart, windowEnd, offset, projectedInventory, projectedDays,
                     params.safetyLevel, assessment, shipmentInfo, consecutiveMissed,
-                    params.shipmentMap, params.shippingDays, params.productionDays);
+                    params.shipmentMap, params.shippingDays);
 
             // 添加到响应
             response.addMonitorPoint(detail);
@@ -234,7 +234,7 @@ public class StockoutPointService {
                 response.setOosEndDate(windowEnd);
                 response.setOosDays(offset);
                 response.setOosNum(assessment.oosQuantity.setScale(0, RoundingMode.CEILING).intValue());
-                response.setMonitorDate(LocalDate.now().plusDays(offset));
+                response.setMonitorDate(params.baseDate.plusDays(offset));
                 response.setOosReason(assessment.note);
                 response.setOosType(1);
             }
@@ -341,8 +341,7 @@ public class StockoutPointService {
             ShipmentWindowInfo shipmentInfo,
             int consecutiveMissed,
             Map<LocalDate, Integer> shipmentMap,
-            int shippingDays,
-            int productionDays) {
+            int shippingDays) {
 
         CosOosPointDetail detail = new CosOosPointDetail();
         detail.setWindowStart(windowStart);
@@ -359,7 +358,7 @@ public class StockoutPointService {
         // 构建详细说明
         String detailNote = buildDetailNote(
                 shipmentInfo, assessment, windowStart, windowEnd,
-                projectedInventory, shippingDays, productionDays);
+                projectedInventory, shippingDays);
         detail.setNote(detailNote);
 
         return detail;
@@ -374,8 +373,7 @@ public class StockoutPointService {
             LocalDate windowStart,
             LocalDate windowEnd,
             BigDecimal projectedInventory,
-            int shippingDays,
-            int productionDays) {
+            int shippingDays) {
 
         StringBuilder note = new StringBuilder();
 
@@ -384,7 +382,8 @@ public class StockoutPointService {
             note.append("窗口[").append(windowStart).append(" ~ ").append(windowEnd).append("] 无发货单；");
         } else {
             if (shipmentInfo.isInTransit) {
-                LocalDate expectedArrival = shipmentInfo.shipmentDate.plusDays(shippingDays + Math.max(0, productionDays));
+                // 预计到达日期 = 发货日期 + 海运时长
+                LocalDate expectedArrival = shipmentInfo.shipmentDate.plusDays(shippingDays);
                 note.append("窗口内存在在途/未到达发货单，预计到达：").append(expectedArrival).append("；");
             } else {
                 note.append("窗口内存在将要到达或已到达的发货单；");
