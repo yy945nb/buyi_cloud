@@ -44,6 +44,9 @@ public class StockoutPointService {
      * 连续未发货触发风险的周数阈值
      */
     private static final int CONSECUTIVE_MISSED_THRESHOLD = 5;
+    
+    /** 触发爆款备货模型的最少风险区域数 */
+    private static final int MIN_RISK_REGIONS_FOR_HOT_MODEL = 2;
 
     /**
      * 评估断货风险监控点
@@ -449,5 +452,190 @@ public class StockoutPointService {
         RiskLevel riskLevel;
         BigDecimal oosQuantity = BigDecimal.ZERO;
         String note;
+    }
+    
+    // ==================== 多区域断货分析扩展 ====================
+    
+    /**
+     * 多区域断货点分析
+     * Multi-Region Stockout Point Analysis
+     * 
+     * 同时分析多个区域的断货风险，用于爆款商品的全面风险评估。
+     * 
+     * @param regionInventories 各区域库存 (区域 -> 库存数量)
+     * @param dailyAvg 总日均销量
+     * @param regionSalesRatios 各区域销量占比 (区域 -> 占比，总和应为1.0)
+     * @param shipmentQtyMap 发货计划
+     * @param productionDays 生产天数
+     * @param regionShippingDays 各区域海运时间 (区域 -> 海运天数)
+     * @param safetyStockDays 安全库存天数
+     * @param intervalDays 监控间隔
+     * @param horizonDays 预测总天数
+     * @param baseDate 基准日期
+     * @return 各区域的断货分析结果
+     */
+    public Map<String, CosOosPointResponse> evaluateMultiRegionStockout(
+            Map<String, Integer> regionInventories,
+            BigDecimal dailyAvg,
+            Map<String, BigDecimal> regionSalesRatios,
+            Map<LocalDate, Integer> shipmentQtyMap,
+            Integer productionDays,
+            Map<String, Integer> regionShippingDays,
+            Integer safetyStockDays,
+            Integer intervalDays,
+            Integer horizonDays,
+            LocalDate baseDate) {
+        
+        Map<String, CosOosPointResponse> results = new java.util.HashMap<>();
+        
+        if (regionInventories == null || regionInventories.isEmpty()) {
+            return results;
+        }
+        
+        // 默认的销量占比（平均分配）
+        Map<String, BigDecimal> salesRatios = regionSalesRatios;
+        if (salesRatios == null || salesRatios.isEmpty()) {
+            int regionCount = regionInventories.size();
+            BigDecimal avgRatio = BigDecimal.ONE.divide(BigDecimal.valueOf(regionCount), 
+                    CALCULATION_SCALE, java.math.RoundingMode.HALF_UP);
+            salesRatios = new java.util.HashMap<>();
+            for (String region : regionInventories.keySet()) {
+                salesRatios.put(region, avgRatio);
+            }
+        }
+        
+        // 为每个区域执行断货分析
+        for (Map.Entry<String, Integer> entry : regionInventories.entrySet()) {
+            String region = entry.getKey();
+            Integer inventory = entry.getValue();
+            
+            // 计算区域日均销量
+            BigDecimal regionDailyAvg = dailyAvg.multiply(
+                    salesRatios.getOrDefault(region, BigDecimal.ZERO));
+            
+            // 获取区域海运时间
+            Integer shippingDays = regionShippingDays != null ? 
+                    regionShippingDays.get(region) : 45;
+            
+            // 执行断货分析
+            CosOosPointResponse response = evaluateWithWeeklyShipments(
+                    inventory,
+                    regionDailyAvg,
+                    shipmentQtyMap,
+                    productionDays,
+                    shippingDays,
+                    safetyStockDays,
+                    intervalDays,
+                    horizonDays,
+                    baseDate
+            );
+            
+            results.put(region, response);
+        }
+        
+        return results;
+    }
+    
+    /**
+     * 快速多区域风险检测
+     * Quick Multi-Region Risk Detection
+     * 
+     * 快速检测是否存在多区域断货风险，用于触发爆款备货模型。
+     * 
+     * @param regionInventories 各区域库存
+     * @param dailyAvg 总日均销量
+     * @param regionSalesRatios 各区域销量占比
+     * @param regionShippingDays 各区域海运时间
+     * @param safetyStockDays 安全库存天数
+     * @param baseDate 基准日期
+     * @return 存在风险的区域数量
+     */
+    public int detectMultiRegionRiskCount(
+            Map<String, Integer> regionInventories,
+            BigDecimal dailyAvg,
+            Map<String, BigDecimal> regionSalesRatios,
+            Map<String, Integer> regionShippingDays,
+            Integer safetyStockDays,
+            LocalDate baseDate) {
+        
+        int riskCount = 0;
+        
+        if (regionInventories == null || dailyAvg == null || 
+                dailyAvg.compareTo(BigDecimal.ZERO) <= 0) {
+            return riskCount;
+        }
+        
+        int safeDays = safetyStockDays != null ? safetyStockDays : 35;
+        BigDecimal safetyLevel = dailyAvg.multiply(BigDecimal.valueOf(safeDays));
+        
+        // 计算平均占比（如果没有提供）
+        Map<String, BigDecimal> salesRatios = regionSalesRatios;
+        if (salesRatios == null || salesRatios.isEmpty()) {
+            int regionCount = regionInventories.size();
+            BigDecimal avgRatio = BigDecimal.ONE.divide(BigDecimal.valueOf(regionCount), 
+                    CALCULATION_SCALE, java.math.RoundingMode.HALF_UP);
+            salesRatios = new java.util.HashMap<>();
+            for (String region : regionInventories.keySet()) {
+                salesRatios.put(region, avgRatio);
+            }
+        }
+        
+        for (Map.Entry<String, Integer> entry : regionInventories.entrySet()) {
+            String region = entry.getKey();
+            Integer inventory = entry.getValue() != null ? entry.getValue() : 0;
+            
+            // 计算区域日均销量
+            BigDecimal regionDailyAvg = dailyAvg.multiply(
+                    salesRatios.getOrDefault(region, BigDecimal.ZERO));
+            
+            // 获取区域海运时间
+            int shippingDays = regionShippingDays != null ? 
+                    regionShippingDays.getOrDefault(region, 45) : 45;
+            
+            // 计算区域安全库存
+            BigDecimal regionSafetyLevel = regionDailyAvg.multiply(BigDecimal.valueOf(safeDays));
+            
+            // 计算海运到达时的预期库存
+            BigDecimal expectedDemand = regionDailyAvg.multiply(BigDecimal.valueOf(shippingDays));
+            BigDecimal expectedInventory = BigDecimal.valueOf(inventory).subtract(expectedDemand);
+            
+            // 判断风险
+            if (expectedInventory.compareTo(BigDecimal.ZERO) <= 0) {
+                // 断货风险
+                riskCount++;
+            } else if (expectedInventory.compareTo(regionSafetyLevel) < 0) {
+                // 低于安全库存风险
+                riskCount++;
+            }
+        }
+        
+        return riskCount;
+    }
+    
+    /**
+     * 判断是否应触发爆款备货模型
+     * 
+     * @param regionInventories 各区域库存
+     * @param dailyAvg 总日均销量
+     * @param regionSalesRatios 各区域销量占比
+     * @param regionShippingDays 各区域海运时间
+     * @param safetyStockDays 安全库存天数
+     * @param baseDate 基准日期
+     * @return 是否应触发爆款备货模型
+     */
+    public boolean shouldTriggerHotSellingModel(
+            Map<String, Integer> regionInventories,
+            BigDecimal dailyAvg,
+            Map<String, BigDecimal> regionSalesRatios,
+            Map<String, Integer> regionShippingDays,
+            Integer safetyStockDays,
+            LocalDate baseDate) {
+        
+        int riskCount = detectMultiRegionRiskCount(
+                regionInventories, dailyAvg, regionSalesRatios,
+                regionShippingDays, safetyStockDays, baseDate);
+        
+        // 当达到最少风险区域数时，触发爆款备货模型
+        return riskCount >= MIN_RISK_REGIONS_FOR_HOT_MODEL;
     }
 }

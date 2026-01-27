@@ -1,5 +1,6 @@
 package com.buyi.ruleengine.stocking.service;
 
+import com.buyi.ruleengine.stocking.enums.ShippingRegion;
 import com.buyi.ruleengine.stocking.enums.StockingModelType;
 import com.buyi.ruleengine.stocking.model.ProductStockConfig;
 import com.buyi.ruleengine.stocking.model.SalesHistoryData;
@@ -7,6 +8,7 @@ import com.buyi.ruleengine.stocking.model.StockingResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +17,13 @@ import java.util.Map;
 /**
  * 备货引擎
  * Stocking Engine
+ * 
+ * 整合四种备货模型的统一入口：
+ * 1. 月度备货模型 - 基于SABC分类的月度备货计划
+ * 2. 每周固定备货模型 - 固定7天周期的备货
+ * 3. 断货点临时备货模型 - 基于断货风险的紧急备货
+ * 4. 新款爆款备货模型 - 针对多区域断货的爆款商品
+ * 
  * <p>
  * 整合三种备货模型的统一入口：
  * 1. 月度备货模型 - 基于SABC分类的月度备货计划
@@ -42,10 +51,17 @@ public class StockingEngine {
      */
     private final StockoutStockingService stockoutStockingService;
 
+    
+    /** 新款爆款备货服务 */
+    private final NewSkuStockupBusiness newSkuStockupBusiness;
+    
+
+
     public StockingEngine() {
         this.monthlyStockingService = new MonthlyStockingService();
         this.weeklyStockingService = new WeeklyStockingService();
         this.stockoutStockingService = new StockoutStockingService();
+        this.newSkuStockupBusiness = new NewSkuStockupBusiness();
     }
 
     public StockingEngine(MonthlyStockingService monthlyStockingService,
@@ -54,6 +70,18 @@ public class StockingEngine {
         this.monthlyStockingService = monthlyStockingService;
         this.weeklyStockingService = weeklyStockingService;
         this.stockoutStockingService = stockoutStockingService;
+        this.newSkuStockupBusiness = new NewSkuStockupBusiness();
+    }
+    
+    public StockingEngine(
+            MonthlyStockingService monthlyStockingService,
+            WeeklyStockingService weeklyStockingService,
+            StockoutStockingService stockoutStockingService,
+            NewSkuStockupBusiness newSkuStockupBusiness) {
+        this.monthlyStockingService = monthlyStockingService;
+        this.weeklyStockingService = weeklyStockingService;
+        this.stockoutStockingService = stockoutStockingService;
+        this.newSkuStockupBusiness = newSkuStockupBusiness;
     }
 
     /**
@@ -99,6 +127,11 @@ public class StockingEngine {
             case STOCKOUT_EMERGENCY:
                 // 如果指定紧急备货模型但没有紧急情况，返回风险评估结果或null
                 result = emergencyResult;
+                break;
+            case NEW_SKU:
+                // 新款爆款备货模型 - 需要多区域库存数据
+                result = newSkuStockupBusiness.evaluateAndCalculateNewSkuStocking(
+                        config, null, null, salesHistory, null, existingShipments, baseDate);
                 break;
             default:
                 logger.warn("Unknown stocking model type: {}, using monthly model", modelType);
@@ -277,5 +310,74 @@ public class StockingEngine {
                 // B/C类一般商品：使用月度备货，减少备货频次
                 return monthlyStockingService.calculateMonthlyStocking(config, salesHistory, baseDate);
         }
+    }
+    
+    // ==================== 新款爆款备货模型入口 ====================
+    
+    /**
+     * 评估并计算新款/爆款备货
+     * 针对短时间销量暴涨导致多区域断货的商品
+     * 
+     * @param config 商品备货配置
+     * @param regionInventories 各区域库存
+     * @param regionInTransit 各区域在途库存
+     * @param salesHistory 销售历史数据
+     * @param regionSalesRatios 各区域销量占比
+     * @param existingShipments 已有发货计划
+     * @param baseDate 基准日期
+     * @return 备货计算结果
+     */
+    public StockingResult evaluateNewSkuStocking(
+            ProductStockConfig config,
+            Map<ShippingRegion, Integer> regionInventories,
+            Map<ShippingRegion, Integer> regionInTransit,
+            SalesHistoryData salesHistory,
+            Map<ShippingRegion, BigDecimal> regionSalesRatios,
+            Map<LocalDate, Integer> existingShipments,
+            LocalDate baseDate) {
+        
+        return newSkuStockupBusiness.evaluateAndCalculateNewSkuStocking(
+                config, regionInventories, regionInTransit, salesHistory,
+                regionSalesRatios, existingShipments, baseDate);
+    }
+    
+    /**
+     * 判断商品是否为爆款商品
+     * 
+     * @param salesHistory 销售历史数据
+     * @return 是否为爆款商品
+     */
+    public boolean isHotSellingProduct(SalesHistoryData salesHistory) {
+        return newSkuStockupBusiness.isHotSellingProduct(salesHistory);
+    }
+    
+    /**
+     * 批量评估爆款备货需求
+     * 
+     * @param configs 商品配置列表
+     * @param regionInventoriesMap SKU -> 各区域库存映射
+     * @param regionInTransitMap SKU -> 各区域在途库存映射
+     * @param salesHistoryMap SKU -> 销售历史映射
+     * @param baseDate 基准日期
+     * @return 需要爆款备货的结果列表
+     */
+    public List<StockingResult> batchEvaluateNewSkuStocking(
+            List<ProductStockConfig> configs,
+            Map<String, Map<ShippingRegion, Integer>> regionInventoriesMap,
+            Map<String, Map<ShippingRegion, Integer>> regionInTransitMap,
+            Map<String, SalesHistoryData> salesHistoryMap,
+            LocalDate baseDate) {
+        
+        return newSkuStockupBusiness.batchEvaluateNewSkuStocking(
+                configs, regionInventoriesMap, regionInTransitMap, salesHistoryMap, baseDate);
+    }
+    
+    /**
+     * 获取新款爆款备货服务实例
+     * 
+     * @return NewSkuStockupBusiness实例
+     */
+    public NewSkuStockupBusiness getNewSkuStockupBusiness() {
+        return newSkuStockupBusiness;
     }
 }
