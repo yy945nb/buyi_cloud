@@ -71,8 +71,11 @@ public class WeeklyStockingService {
         // 4. 考虑当前库存，计算实际需要备货量
         int currentInventory = config.getCurrentInventory() != null ? config.getCurrentInventory() : 0;
         
-        // 计算7天后的预计库存
-        int expectedInventoryAfter7Days = currentInventory - recommendedQuantity;
+        // 计算7天预期销量
+        int expectedSales7Days = recommendedQuantity;
+        
+        // 计算7天后的预计库存 = 当前库存 - 7天预期销量
+        int expectedInventoryAfter7Days = currentInventory - expectedSales7Days;
         
         // 如果预计库存不足以支撑安全库存天数，则需要备货
         int safetyStockDays = config.getEffectiveSafetyStockDays();
@@ -81,7 +84,9 @@ public class WeeklyStockingService {
         
         int netQuantity = 0;
         if (expectedInventoryAfter7Days < safetyStock) {
-            netQuantity = adjustedQuantity + (safetyStock - Math.max(0, expectedInventoryAfter7Days));
+            // 需要补足差额：安全库存 - 预计剩余库存（如果为负则需要补足更多）
+            int shortage = safetyStock - expectedInventoryAfter7Days;
+            netQuantity = Math.max(0, shortage);
         }
         
         // 5. 应用最小/最大订货量限制
