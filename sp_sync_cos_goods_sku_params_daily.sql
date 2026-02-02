@@ -337,26 +337,26 @@ BEGIN
     ) cs_min ON lxs.store_id = cs_min.external_id
     INNER JOIN cos_shop cs ON cs_min.id = cs.id;
     
-    -- 插入JH海外仓库存 - 使用最新库存
+    -- 插入JH海外仓库存 - 使用最新库存（基于update_time）
     INSERT INTO tmp_platform_stock (shop_id, sku_code, available_stock)
     SELECT 
         cs.id AS shop_id,
         jws.warehouse_sku AS sku_code,
         jws.available_qty AS available_stock
     FROM (
-        -- 获取每个仓库+SKU的最新数据
+        -- 获取每个店铺+SKU的最新数据（基于update_time）
         SELECT 
             shop_id,
             warehouse_sku,
-            MAX(sync_date) AS max_sync_date
+            MAX(update_time) AS max_update_time
         FROM amf_jh_shop_warehouse_stock
-        WHERE sync_date IS NOT NULL
+        WHERE update_time IS NOT NULL
         GROUP BY shop_id, warehouse_sku
     ) max_jh
     INNER JOIN amf_jh_shop_warehouse_stock jws 
         ON max_jh.shop_id = jws.shop_id 
         AND max_jh.warehouse_sku = jws.warehouse_sku 
-        AND max_jh.max_sync_date = jws.sync_date
+        AND max_jh.max_update_time = jws.update_time
     INNER JOIN amf_jh_shop jhs ON jws.shop_id = jhs.id
     INNER JOIN cos_shop cs ON jhs.id = cs.platform_shop_id
     WHERE cs.deleted = 0
