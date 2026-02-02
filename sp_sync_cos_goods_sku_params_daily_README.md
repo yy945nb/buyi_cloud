@@ -11,6 +11,8 @@
 #### 1.1 JH系统（鲸汇系统）
 - **源表**: `amf_jh_orders`
 - **店铺映射**: `amf_jh_shop.id` → `cos_shop.platform_shop_id` → `cos_shop.id`
+  - **注意**: 原始需求提到 `extend_id` 字段，但当前schema中不存在该字段，因此使用 `id` 字段
+  - 如果未来添加 `extend_id` 字段，需要修改映射为: `amf_jh_shop.extend_id` → `cos_shop.platform_shop_id`
 - **SKU字段**: `warehouse_sku`
 - **数量字段**: `warehouse_sku_num`
 - **日期字段**: `delivery_time` (发货时间)

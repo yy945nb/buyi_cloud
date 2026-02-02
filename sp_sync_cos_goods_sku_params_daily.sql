@@ -65,6 +65,8 @@ BEGIN
     
     -- 插入JH系统销量数据
     -- JH店铺映射: amf_jh_shop.id → cos_shop.platform_shop_id → cos_shop.id
+    -- 注意: 原始需求提到 extend_id 字段，但当前schema中使用 id 字段
+    -- 如果未来添加 extend_id，需要修改为: jhs.extend_id = cs.platform_shop_id
     INSERT INTO tmp_jh_sales (company_id, shop_id, sku_code, sku_id, sale_qty_today, sale_qty_7days, sale_qty_15days, sale_qty_30days)
     SELECT 
         cs.company_id,
