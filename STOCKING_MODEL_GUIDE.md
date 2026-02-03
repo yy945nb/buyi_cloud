@@ -9,6 +9,12 @@
 2. **每周固定备货模型 (Weekly Fixed Stocking Model)** - 固定7天周期的备货
 3. **断货点临时备货模型 (Stockout Emergency Stocking Model)** - 基于断货风险的紧急备货
 
+**新增功能**：
+- ✨ **仓库维度在途库存计算** - 支持按仓库维度聚合JH、LX OWMS和FBA发货单的在途库存
+- ✨ **模式隔离** - 区分区域仓模式（REGIONAL）和FBA模式的库存计算
+- ✨ **多仓库监控** - 同时监控多个仓库的断货风险
+- 详见[在途库存计算指南](INTRANSIT_INVENTORY_GUIDE.md)
+
 ## 核心功能 / Core Features
 
 ### 1. 月度备货模型
@@ -45,9 +51,18 @@
 
 **计算逻辑**：
 - 基于现有断货点分析服务预测未来断货风险
+- **支持按仓库维度计算在途库存**（详见[在途库存计算指南](INTRANSIT_INVENTORY_GUIDE.md)）
 - 考虑不同发货区域的海运时间差异
 - 根据风险等级和紧急程度计算备货量
 - 紧急备货系数：1.2
+
+**在途库存计算**：
+- **区域仓模式**：聚合JH发货单和LX OWMS海外仓发货单
+  - JH：按warehouse_id和sku聚合，筛选status != 2的未完成发货单
+  - LX OWMS：按r_wid和sku聚合，筛选status = 50的待收货发货单
+- **FBA模式**：聚合FBA发货单
+  - 按wid/destination_fulfillment_center_id和sku聚合
+  - 筛选shipment_status = 'WORKING'的在途发货单
 
 **发货区域配置**：
 | 区域 | 名称 | 海运时间 | 监控提前天数 |
@@ -215,3 +230,5 @@ config.setMaxOrderQuantity(10000); // 最大订货量
 2. **紧急备货优先**：当检测到紧急断货风险时，引擎会自动优先返回紧急备货建议
 3. **区域差异**：不同发货区域的海运时间不同，会影响断货监控点和建议发货日期
 4. **自动备货开关**：可通过 `autoStockingEnabled` 字段控制是否纳入自动备货计算
+5. **在途库存计算**：系统支持按仓库维度聚合在途库存，详见[在途库存计算指南](INTRANSIT_INVENTORY_GUIDE.md)
+6. **模式隔离**：区域仓模式（JH+LX）和FBA模式使用独立的在途库存计算和库存聚合逻辑

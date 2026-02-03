@@ -27,6 +27,9 @@ public class FactInventory implements Serializable {
     /** 店铺键 */
     private Long shopKey;
     
+    /** 模式：REGIONAL（区域仓）或 FBA */
+    private String mode;
+    
     /** 在库数量 */
     private Integer onHandQuantity;
     
@@ -140,6 +143,14 @@ public class FactInventory implements Serializable {
 
     public void setShopKey(Long shopKey) {
         this.shopKey = shopKey;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
     }
 
     public Integer getOnHandQuantity() {
