@@ -9,6 +9,12 @@
 2. **每周固定备货模型 (Weekly Fixed Stocking Model)** - 固定7天周期的备货
 3. **断货点临时备货模型 (Stockout Emergency Stocking Model)** - 基于断货风险的紧急备货
 
+**新增功能**：
+- ✨ **仓库维度在途库存计算** - 支持按仓库维度聚合JH、LX OWMS和FBA发货单的在途库存
+- ✨ **模式隔离** - 区分区域仓模式（REGIONAL）和FBA模式的库存计算
+- ✨ **多仓库监控** - 同时监控多个仓库的断货风险
+- 详见[在途库存计算指南](INTRANSIT_INVENTORY_GUIDE.md)
+
 ## 核心功能 / Core Features
 
 ### 1. 月度备货模型
