@@ -7,6 +7,8 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 1. **规则引擎 (Rule Engine)** - 灵活的业务规则执行框架，支持Java表达式、SQL查询、API调用
 2. **SKU标签系统 (SKU Tagging System)** - 商品标签管理系统，支持规则自动打标和人工打标
 3. **数据仓库 (Data Warehouse)** - 私有化部署的数据仓库解决方案，支持OLAP多维分析
+4. **备货模型 (Stocking Model)** - 智能备货计算引擎，支持月度、每周固定和断货点临时备货
+5. **断货点监控模型 (Stock-Out Monitoring Model)** - 基于产品的断货点监控，支持FBA与区域仓双模式业务隔离
 
 ## 主要功能模块 (Main Features)
 
@@ -42,6 +44,30 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 - ✅ 定时同步调度
 - ✅ SCD Type 2 缓慢变化维度支持
 
+### 4. 备货模型 (Stocking Model)
+
+详细文档请参考：[STOCKING_MODEL_GUIDE.md](STOCKING_MODEL_GUIDE.md)
+
+- ✅ 三种备货模型（月度、每周固定、断货点临时）
+- ✅ SABC商品分类管理
+- ✅ 发货区域配置（美西/美东/美中/美南）
+- ✅ 销售历史汇总与噪点排除
+- ✅ 自动备货计算与建议
+- ✅ 批量处理与执行日志
+
+### 5. 断货点监控模型 (Stock-Out Monitoring Model)
+
+详细文档请参考：[STOCKOUT_MONITORING_GUIDE.md](STOCKOUT_MONITORING_GUIDE.md)
+
+- ✅ FBA与区域仓双模式业务隔离
+- ✅ 仓库维度库存聚合（JH + LX海外仓）
+- ✅ 区域仓-仓库绑定关系管理
+- ✅ 在途库存与余单跟踪
+- ✅ 区域订单比例配置
+- ✅ 断货点(ROP)计算与风险评估
+- ✅ 每日快照与趋势分析
+- ✅ 仓库映射（JH/LX/OWMS/FBA）
+
 ## 快速开始 (Quick Start)
 
 ### 1. 环境要求
@@ -73,6 +99,12 @@ mysql -u username -p database < sku_tag_schema.sql
 
 # 创建数据仓库表
 mysql -u username -p datawarehouse < datawarehouse_schema.sql
+
+# 创建备货模型表
+mysql -u username -p database < stocking_model_schema.sql
+
+# 创建断货点监控模型表
+mysql -u username -p database < stockout_monitoring_schema.sql
 ```
 
 ### 5. 运行示例
@@ -102,18 +134,26 @@ buyi_cloud/
 │   │   ├── model/           # 标签模型
 │   │   ├── service/         # 标签服务
 │   │   └── enums/           # 枚举类型
-│   └── datawarehouse/       # 数据仓库模块
-│       ├── model/           # 数仓模型（维度表、事实表、聚合表）
-│       ├── service/         # ETL和OLAP服务
-│       ├── config/          # 配置
-│       └── scheduler/       # 调度器
+│   ├── datawarehouse/       # 数据仓库模块
+│   │   ├── model/           # 数仓模型（维度表、事实表、聚合表）
+│   │   ├── service/         # ETL和OLAP服务
+│   │   ├── config/          # 配置
+│   │   └── scheduler/       # 调度器
+│   └── stocking/            # 备货模型模块
+│       ├── model/           # 备货模型
+│       ├── service/         # 备货服务
+│       └── engine/          # 备货引擎
 ├── src/test/java/           # 测试代码
 ├── rule_engine_schema.sql   # 规则引擎数据库表
 ├── sku_tag_schema.sql       # SKU标签系统数据库表
 ├── datawarehouse_schema.sql # 数据仓库数据库表
+├── stocking_model_schema.sql # 备货模型数据库表
+├── stockout_monitoring_schema.sql # 断货点监控模型数据库表
 ├── RULE_ENGINE_README.md    # 规则引擎文档
 ├── SKU_TAGGING_GUIDE.md     # SKU标签系统文档
-└── DATA_WAREHOUSE_GUIDE.md  # 数据仓库文档
+├── DATA_WAREHOUSE_GUIDE.md  # 数据仓库文档
+├── STOCKING_MODEL_GUIDE.md  # 备货模型文档
+└── STOCKOUT_MONITORING_GUIDE.md # 断货点监控模型文档
 ```
 
 ## 核心概念 (Core Concepts)
@@ -201,6 +241,8 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 - [规则引擎JSON功能指南](JSON_FEATURES_GUIDE.md)
 - [SKU标签系统开发文档](SKU_TAGGING_GUIDE.md)
 - [数据仓库部署指南](DATA_WAREHOUSE_GUIDE.md)
+- [备货模型使用指南](STOCKING_MODEL_GUIDE.md)
+- [断货点监控模型使用指南](STOCKOUT_MONITORING_GUIDE.md)
 
 ## 贡献指南 (Contributing)
 
