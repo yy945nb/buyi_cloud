@@ -7,6 +7,7 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 1. **规则引擎 (Rule Engine)** - 灵活的业务规则执行框架，支持Java表达式、SQL查询、API调用
 2. **SKU标签系统 (SKU Tagging System)** - 商品标签管理系统，支持规则自动打标和人工打标
 3. **数据仓库 (Data Warehouse)** - 私有化部署的数据仓库解决方案，支持OLAP多维分析
+4. **产品断货点监控 (Product Stockout Monitoring)** - 基于产品、区域仓维度的库存监控和断货预警系统
 
 ## 主要功能模块 (Main Features)
 
@@ -42,6 +43,19 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 - ✅ 定时同步调度
 - ✅ SCD Type 2 缓慢变化维度支持
 
+### 4. 产品断货点监控 (Product Stockout Monitoring)
+
+详细文档请参考：[STOCKOUT_MONITORING_GUIDE.md](STOCKOUT_MONITORING_GUIDE.md)
+
+- ✅ 业务模式隔离（JH/LX/FBA三种模式）
+- ✅ 在途库存聚合（按产品、仓库、模式维度）
+- ✅ 海外仓库存聚合（JH+LX合并、FBA单独）
+- ✅ 区域仓维度统计（通过仓库绑定关系聚合）
+- ✅ 订单区域比例分析
+- ✅ 断货点和可售天数计算
+- ✅ 四级风险预警（SAFE/WARNING/DANGER/STOCKOUT）
+- ✅ 每日快照和历史数据回溯
+
 ## 快速开始 (Quick Start)
 
 ### 1. 环境要求
@@ -73,6 +87,9 @@ mysql -u username -p database < sku_tag_schema.sql
 
 # 创建数据仓库表
 mysql -u username -p datawarehouse < datawarehouse_schema.sql
+
+# 创建产品断货点监控表
+mysql -u username -p datawarehouse < stockout_monitoring_schema.sql
 ```
 
 ### 5. 运行示例
@@ -86,6 +103,9 @@ mvn exec:java -Dexec.mainClass="com.buyi.sku.tag.SkuTaggingExample"
 
 # 运行数据仓库示例
 mvn exec:java -Dexec.mainClass="com.buyi.datawarehouse.DataWarehouseDemo"
+
+# 运行产品断货点监控示例
+mvn exec:java -Dexec.mainClass="com.buyi.datawarehouse.monitoring.StockoutMonitoringDemo"
 ```
 
 ## 项目结构 (Project Structure)
@@ -173,7 +193,8 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 - ✅ 规则引擎测试：24个测试用例
 - ✅ SKU标签系统测试：16个测试用例
 - ✅ 数据仓库测试：18个测试用例
-- ✅ 总计：58个测试用例
+- ✅ 产品断货点监控测试：28个测试用例
+- ✅ 总计：86个测试用例
 
 ```bash
 [INFO] Results:
@@ -201,6 +222,7 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 - [规则引擎JSON功能指南](JSON_FEATURES_GUIDE.md)
 - [SKU标签系统开发文档](SKU_TAGGING_GUIDE.md)
 - [数据仓库部署指南](DATA_WAREHOUSE_GUIDE.md)
+- [产品断货点监控使用指南](STOCKOUT_MONITORING_GUIDE.md)
 
 ## 贡献指南 (Contributing)
 
