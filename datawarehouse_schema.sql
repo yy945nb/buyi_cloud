@@ -195,6 +195,7 @@ CREATE TABLE `dw_fact_inventory` (
   `product_key` BIGINT NOT NULL COMMENT '商品键',
   `warehouse_key` BIGINT NOT NULL COMMENT '仓库键',
   `shop_key` BIGINT DEFAULT NULL COMMENT '店铺键（FBA库存关联店铺）',
+  `mode` VARCHAR(32) DEFAULT NULL COMMENT '模式 REGIONAL/FBA',
   `on_hand_quantity` INT NOT NULL DEFAULT 0 COMMENT '在库数量',
   `available_quantity` INT NOT NULL DEFAULT 0 COMMENT '可用数量',
   `reserved_quantity` INT DEFAULT 0 COMMENT '预留数量',
@@ -212,7 +213,8 @@ CREATE TABLE `dw_fact_inventory` (
   KEY `idx_date_key` (`date_key`),
   KEY `idx_product_key` (`product_key`),
   KEY `idx_warehouse_key` (`warehouse_key`),
-  KEY `idx_shop_key` (`shop_key`)
+  KEY `idx_shop_key` (`shop_key`),
+  KEY `idx_mode` (`mode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='库存事实表（日快照）';
 
 -- ----------------------------
@@ -243,6 +245,74 @@ CREATE TABLE `dw_fact_purchase` (
   KEY `idx_purchase_order_id` (`purchase_order_id`),
   KEY `idx_order_status` (`order_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='采购事实表';
+
+-- ----------------------------
+-- 仓库映射表 (Warehouse Mapping Table)
+-- ----------------------------
+DROP TABLE IF EXISTS `dw_warehouse_mapping`;
+CREATE TABLE `dw_warehouse_mapping` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `warehouse_id` BIGINT NOT NULL COMMENT '统一仓库ID',
+  `warehouse_code` VARCHAR(64) NOT NULL COMMENT '仓库编码',
+  `warehouse_name` VARCHAR(128) NOT NULL COMMENT '仓库名称',
+  `warehouse_type` VARCHAR(32) NOT NULL COMMENT '仓库类型 FBA/REGIONAL',
+  `source_system` VARCHAR(32) NOT NULL COMMENT '来源系统 JH/LX',
+  `source_warehouse_id` BIGINT NOT NULL COMMENT '源系统仓库ID（JH的warehouse_id或LX的wid）',
+  `source_warehouse_name` VARCHAR(128) DEFAULT NULL COMMENT '源系统仓库名称',
+  `region` VARCHAR(64) DEFAULT NULL COMMENT '地区',
+  `country` VARCHAR(64) DEFAULT NULL COMMENT '国家',
+  `is_active` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 0-否 1-是',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_source_warehouse` (`source_system`, `source_warehouse_id`),
+  KEY `idx_warehouse_id` (`warehouse_id`),
+  KEY `idx_warehouse_type` (`warehouse_type`),
+  KEY `idx_source_system` (`source_system`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='仓库映射表';
+
+-- 初始化示例仓库映射数据
+-- 需要根据实际业务场景配置具体映射关系
+INSERT INTO `dw_warehouse_mapping` 
+  (`warehouse_id`, `warehouse_code`, `warehouse_name`, `warehouse_type`, `source_system`, `source_warehouse_id`, `source_warehouse_name`, `region`, `country`) 
+VALUES
+  -- 示例：JH系统仓库映射
+  (1001, 'CAJW06', 'CAJW06仓', 'REGIONAL', 'JH', 11129, 'CAJW06', 'US_WEST', 'US'),
+  (1002, 'CG-MJJ', 'CG仓-Meijiajia', 'REGIONAL', 'JH', 10568, 'CG仓-Meijiajia', 'US_EAST', 'US'),
+  -- 示例：LX系统欧洲仓映射
+  (2001, 'EUWE', '欧洲DE EUWE', 'REGIONAL', 'LX', 9488, '欧洲DE EUWE', 'EU', 'DE'),
+  (2002, 'UKNH02', '欧洲UK UKNH02', 'REGIONAL', 'LX', 9487, '欧洲UK UKNH02', 'EU', 'UK'),
+  -- 示例：FBA仓映射（使用wid作为source_warehouse_id）
+  (3001, 'FBA_US', 'FBA美国仓', 'FBA', 'LX', 4000, 'FBA', 'US', 'US')
+ON DUPLICATE KEY UPDATE `update_time` = CURRENT_TIMESTAMP;
+
+-- ----------------------------
+-- 在途库存聚合表 (In-transit Inventory Aggregation Table)
+-- ----------------------------
+DROP TABLE IF EXISTS `dw_intransit_inventory`;
+CREATE TABLE `dw_intransit_inventory` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `date_key` INT NOT NULL COMMENT '日期键（监控日期）',
+  `warehouse_id` BIGINT NOT NULL COMMENT '仓库ID（目的仓库）',
+  `warehouse_code` VARCHAR(64) DEFAULT NULL COMMENT '仓库编码',
+  `warehouse_name` VARCHAR(128) DEFAULT NULL COMMENT '仓库名称',
+  `sku_code` VARCHAR(64) NOT NULL COMMENT 'SKU编码',
+  `mode` VARCHAR(32) NOT NULL COMMENT '模式 REGIONAL/FBA',
+  `source` VARCHAR(64) NOT NULL COMMENT '来源 JH/LX_OWMS/FBA',
+  `intransit_quantity` INT NOT NULL DEFAULT 0 COMMENT '在途数量',
+  `shipment_count` INT DEFAULT 0 COMMENT '发货单数量',
+  `earliest_shipment_date` DATE DEFAULT NULL COMMENT '最早发货日期',
+  `latest_expected_arrival_date` DATE DEFAULT NULL COMMENT '最晚预计到达日期',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_date_warehouse_sku_source` (`date_key`, `warehouse_id`, `sku_code`, `source`),
+  KEY `idx_date_key` (`date_key`),
+  KEY `idx_warehouse_id` (`warehouse_id`),
+  KEY `idx_sku_code` (`sku_code`),
+  KEY `idx_mode` (`mode`),
+  KEY `idx_source` (`source`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='在途库存聚合表（按仓库和SKU维度）';
 
 -- ============================================================
 -- 3. 聚合表 (Aggregation Tables)
