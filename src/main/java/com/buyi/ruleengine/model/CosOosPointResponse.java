@@ -36,6 +36,15 @@ public class CosOosPointResponse {
 
     /** 首个风险点（断货或风险） */
     private CosOosPointDetail firstRiskPoint;
+    
+    /** 仓库ID（仓库维度监控扩展字段） */
+    private Long warehouseId;
+    
+    /** SKU编码（仓库维度监控扩展字段） */
+    private String skuCode;
+    
+    /** 模式：REGIONAL 或 FBA（仓库维度监控扩展字段） */
+    private String mode;
 
     public CosOosPointResponse() {
         this.monitorPoints = new ArrayList<>();
@@ -112,6 +121,30 @@ public class CosOosPointResponse {
 
     public void setFirstRiskPoint(CosOosPointDetail firstRiskPoint) {
         this.firstRiskPoint = firstRiskPoint;
+    }
+
+    public Long getWarehouseId() {
+        return warehouseId;
+    }
+
+    public void setWarehouseId(Long warehouseId) {
+        this.warehouseId = warehouseId;
+    }
+
+    public String getSkuCode() {
+        return skuCode;
+    }
+
+    public void setSkuCode(String skuCode) {
+        this.skuCode = skuCode;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
     }
 
     /**
