@@ -7,6 +7,7 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 1. **规则引擎 (Rule Engine)** - 灵活的业务规则执行框架，支持Java表达式、SQL查询、API调用
 2. **SKU标签系统 (SKU Tagging System)** - 商品标签管理系统，支持规则自动打标和人工打标
 3. **数据仓库 (Data Warehouse)** - 私有化部署的数据仓库解决方案，支持OLAP多维分析
+4. **产品断货点监控模型 (Product Stockout Monitoring)** - 产品级别断货点监控，整合国内仓库存数据
 
 ## 主要功能模块 (Main Features)
 
@@ -42,6 +43,19 @@ Buyi Cloud是一个跨境电商平台项目，包含以下核心功能：
 - ✅ 定时同步调度
 - ✅ SCD Type 2 缓慢变化维度支持
 
+### 4. 产品断货点监控模型 (Product Stockout Monitoring)
+
+详细文档请参考：[PRODUCT_STOCKOUT_MONITOR_GUIDE.md](PRODUCT_STOCKOUT_MONITOR_GUIDE.md)
+
+- ✅ 产品级别（SPU）断货监控快照
+- ✅ 整合国内仓余单/实物库存数据
+- ✅ local_sku到产品SKU自动映射
+- ✅ 聚合SKU级别监控数据到产品级别
+- ✅ 风险等级评估（0-4级）
+- ✅ 智能补货建议（直补量、生产量）
+- ✅ 幂等存储过程，支持定时调度
+- ✅ 覆盖天数和断货日期预测
+
 ## 快速开始 (Quick Start)
 
 ### 1. 环境要求
@@ -73,6 +87,9 @@ mysql -u username -p database < sku_tag_schema.sql
 
 # 创建数据仓库表
 mysql -u username -p datawarehouse < datawarehouse_schema.sql
+
+# 创建产品断货点监控模型表
+mysql -u username -p database < product_stockout_monitor_schema.sql
 ```
 
 ### 5. 运行示例
@@ -201,6 +218,7 @@ List<SkuTagResult> lowGradeSku = queryService.querySkusByGrade("C");
 - [规则引擎JSON功能指南](JSON_FEATURES_GUIDE.md)
 - [SKU标签系统开发文档](SKU_TAGGING_GUIDE.md)
 - [数据仓库部署指南](DATA_WAREHOUSE_GUIDE.md)
+- [产品断货点监控模型指南](PRODUCT_STOCKOUT_MONITOR_GUIDE.md)
 
 ## 贡献指南 (Contributing)
 
