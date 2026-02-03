@@ -42,7 +42,7 @@ This stock-out monitoring model is built upon existing product data, introducing
 
 安全库存数量 = 区域日均销量 × safety_days
 
-再订货点(ROP) = 区域日均销量 × (shipping_days + producte_days + safety_days)
+再订货点(ROP) = 区域日均销量 × (shipping_days + production_days + safety_days)
 
 缺口数量 = ROP - (onhand_qty + in_transit_qty)
 
@@ -72,7 +72,7 @@ This stock-out monitoring model is built upon existing product data, introducing
 - `data_date`: 数据日期
 - `platform_sale_num`, `daily_sale_qty`: 销售指标
 - `remaining_qty`, `open_intransit_qty`: 库存指标
-- `safety_days`, `shipping_days`, `producte_days`: 时间参数
+- `safety_days`, `shipping_days`, `production_days`: 时间参数
 - `rop_qty`, `oos_platform_date`, `risk_level`: 断货点指标
 
 #### 2. pms_commodity_sku_params - 产品SKU日参数表
@@ -314,8 +314,8 @@ SELECT
     commodity_sku_code,
     gap_qty,
     region_daily_sale_qty,
-    shipping_days + producte_days as lead_time_days,
-    CEIL(gap_qty + region_daily_sale_qty * (shipping_days + producte_days)) as recommended_order_qty
+    shipping_days + production_days as lead_time_days,
+    CEIL(gap_qty + region_daily_sale_qty * (shipping_days + production_days)) as recommended_order_qty
 FROM pms_commodity_sku_region_warehouse_params
 WHERE company_id = 1
   AND monitor_date = CURDATE()
@@ -389,7 +389,7 @@ ORDER BY monitor_date DESC, business_mode;
 - **默认值**: 30天
 - **实际值**: 美东50天，美西35天，欧洲40-45天
 
-**生产周期天数 (producte_days)**
+**生产周期天数 (production_days)**
 - 从下单到生产完成的时间
 - **默认值**: 15天
 - **实际值**: 根据供应商和产品类型调整
@@ -403,7 +403,7 @@ safety_stock_qty = CEIL(region_daily_sale_qty × safety_days)
 
 **再订货点 (rop_qty)**
 ```
-rop_qty = CEIL(region_daily_sale_qty × (shipping_days + producte_days + safety_days))
+rop_qty = CEIL(region_daily_sale_qty × (shipping_days + production_days + safety_days))
 ```
 - 含义：当库存低于此值时应立即下单
 
@@ -478,7 +478,7 @@ INSERT INTO pms_commodity_sku_params
     (company_id, commodity_id, commodity_code, 
      commodity_sku_id, commodity_sku_code, data_date,
      daily_sale_qty, remaining_qty, open_intransit_qty,
-     safety_days, shipping_days, producte_days)
+     safety_days, shipping_days, production_days)
 SELECT
     company_id,
     commodity_id,
@@ -532,7 +532,7 @@ CALL sp_sync_jh_warehouse_relation();
 
 ### 3. 时间参数校准
 
-shipping_days、producte_days、safety_days需根据实际情况校准：
+shipping_days、production_days、safety_days需根据实际情况校准：
 - 运输天数：考虑淡旺季、物流供应商、路线差异
 - 生产周期：考虑供应商产能、原材料采购周期
 - 安全天数：考虑销量波动、供应链稳定性

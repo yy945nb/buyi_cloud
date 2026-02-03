@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS `pms_commodity_params` (
     -- 时间参数
     `safety_days` INT DEFAULT 0 COMMENT '安全库存天数',
     `shipping_days` INT DEFAULT 0 COMMENT '运输天数',
-    `producte_days` INT DEFAULT 0 COMMENT '生产周期天数',
+    `production_days` INT DEFAULT 0 COMMENT '生产周期天数',
     `stock_days` DECIMAL(10,2) DEFAULT 0.00 COMMENT '库存可售天数',
     
     -- 断货点指标
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `pms_commodity_sku_params` (
     -- 时间参数
     `safety_days` INT DEFAULT 0 COMMENT '安全库存天数',
     `shipping_days` INT DEFAULT 0 COMMENT '运输天数',
-    `producte_days` INT DEFAULT 0 COMMENT '生产周期天数',
+    `production_days` INT DEFAULT 0 COMMENT '生产周期天数',
     `stock_days` DECIMAL(10,2) DEFAULT 0.00 COMMENT '库存可售天数',
     
     -- 断货点指标
@@ -210,12 +210,12 @@ CREATE TABLE IF NOT EXISTS `pms_commodity_sku_region_warehouse_params` (
     -- 时间参数
     `safety_days` INT DEFAULT 0 COMMENT '安全库存天数',
     `shipping_days` INT DEFAULT 0 COMMENT '运输天数',
-    `producte_days` INT DEFAULT 0 COMMENT '生产周期天数',
+    `production_days` INT DEFAULT 0 COMMENT '生产周期天数',
     `stock_days` DECIMAL(10,2) DEFAULT 0.00 COMMENT '库存可售天数',
     
     -- 断货点计算
     `safety_stock_qty` INT DEFAULT 0 COMMENT '安全库存数量=region_daily_sale_qty*safety_days',
-    `rop_qty` INT DEFAULT 0 COMMENT '再订货点ROP=region_daily_sale_qty*(shipping_days+producte_days)+safety_stock_qty',
+    `rop_qty` INT DEFAULT 0 COMMENT '再订货点ROP=region_daily_sale_qty*(shipping_days+production_days)+safety_stock_qty',
     `gap_qty` INT DEFAULT 0 COMMENT '缺口数量=rop_qty-total_available_qty',
     `available_days` DECIMAL(10,2) DEFAULT 0.00 COMMENT '可售天数=total_available_qty/region_daily_sale_qty',
     `oos_date_est` DATE COMMENT '预计断货日期=monitor_date+available_days',
@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS `pms_commodity_region_warehouse_params` (
     -- 时间参数
     `safety_days` INT DEFAULT 0 COMMENT '安全库存天数',
     `shipping_days` INT DEFAULT 0 COMMENT '运输天数',
-    `producte_days` INT DEFAULT 0 COMMENT '生产周期天数',
+    `production_days` INT DEFAULT 0 COMMENT '生产周期天数',
     `stock_days` DECIMAL(10,2) DEFAULT 0.00 COMMENT '库存可售天数',
     
     -- 断货点计算
@@ -339,7 +339,7 @@ BEGIN
         commodity_id, commodity_code, commodity_sku_id, commodity_sku_code,
         onhand_qty, in_transit_qty, backlog_qty, total_available_qty,
         region_order_ratio, daily_sale_qty, region_daily_sale_qty,
-        safety_days, shipping_days, producte_days, stock_days,
+        safety_days, shipping_days, production_days, stock_days,
         safety_stock_qty, rop_qty, gap_qty, available_days, oos_date_est, risk_level
     )
     SELECT
@@ -377,15 +377,15 @@ BEGIN
         -- 时间参数
         COALESCE(sku_params.safety_days, 15) AS safety_days,
         COALESCE(sku_params.shipping_days, 30) AS shipping_days,
-        COALESCE(sku_params.producte_days, 15) AS producte_days,
+        COALESCE(sku_params.production_days, 15) AS production_days,
         COALESCE(sku_params.stock_days, 0) AS stock_days,
         
         -- 断货点计算
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 0.25) * COALESCE(sku_params.safety_days, 15)) AS safety_stock_qty,
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 0.25) * 
-            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.producte_days, 15) + COALESCE(sku_params.safety_days, 15))) AS rop_qty,
+            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.production_days, 15) + COALESCE(sku_params.safety_days, 15))) AS rop_qty,
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 0.25) * 
-            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.producte_days, 15) + COALESCE(sku_params.safety_days, 15))) -
+            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.production_days, 15) + COALESCE(sku_params.safety_days, 15))) -
             (COALESCE(sku_params.remaining_qty, 0) + COALESCE(sku_params.open_intransit_qty, 0)) AS gap_qty,
         CASE 
             WHEN COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 0.25) > 0 THEN
@@ -439,7 +439,7 @@ BEGIN
         commodity_id, commodity_code, commodity_sku_id, commodity_sku_code,
         onhand_qty, in_transit_qty, backlog_qty, total_available_qty,
         region_order_ratio, daily_sale_qty, region_daily_sale_qty,
-        safety_days, shipping_days, producte_days, stock_days,
+        safety_days, shipping_days, production_days, stock_days,
         safety_stock_qty, rop_qty, gap_qty, available_days, oos_date_est, risk_level
     )
     SELECT
@@ -477,15 +477,15 @@ BEGIN
         -- 时间参数
         COALESCE(sku_params.safety_days, 15) AS safety_days,
         COALESCE(sku_params.shipping_days, 30) AS shipping_days,
-        COALESCE(sku_params.producte_days, 15) AS producte_days,
+        COALESCE(sku_params.production_days, 15) AS production_days,
         COALESCE(sku_params.stock_days, 0) AS stock_days,
         
         -- 断货点计算
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 1.0) * COALESCE(sku_params.safety_days, 15)) AS safety_stock_qty,
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 1.0) * 
-            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.producte_days, 15) + COALESCE(sku_params.safety_days, 15))) AS rop_qty,
+            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.production_days, 15) + COALESCE(sku_params.safety_days, 15))) AS rop_qty,
         CEIL(COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 1.0) * 
-            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.producte_days, 15) + COALESCE(sku_params.safety_days, 15))) -
+            (COALESCE(sku_params.shipping_days, 30) + COALESCE(sku_params.production_days, 15) + COALESCE(sku_params.safety_days, 15))) -
             (COALESCE(sku_params.remaining_qty, 0) + COALESCE(sku_params.open_intransit_qty, 0)) AS gap_qty,
         CASE 
             WHEN COALESCE(sku_params.daily_sale_qty, 0) * COALESCE(ratio.order_ratio, 1.0) > 0 THEN
@@ -565,7 +565,7 @@ BEGIN
         commodity_id, commodity_code,
         onhand_qty, in_transit_qty, backlog_qty, total_available_qty,
         region_order_ratio, daily_sale_qty, region_daily_sale_qty,
-        safety_days, shipping_days, producte_days, stock_days,
+        safety_days, shipping_days, production_days, stock_days,
         safety_stock_qty, rop_qty, gap_qty, available_days, oos_date_est, risk_level
     )
     SELECT
@@ -595,7 +595,7 @@ BEGIN
         -- 时间参数（使用最大值作为保守估计）
         MAX(safety_days) AS safety_days,
         MAX(shipping_days) AS shipping_days,
-        MAX(producte_days) AS producte_days,
+        MAX(production_days) AS production_days,
         AVG(stock_days) AS stock_days,
         
         -- 断货点计算（重新计算）
