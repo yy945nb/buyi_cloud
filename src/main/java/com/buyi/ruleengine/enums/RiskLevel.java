@@ -6,19 +6,24 @@ package com.buyi.ruleengine.enums;
  */
 public enum RiskLevel {
     /**
-     * 断货 - 预计库存 <= 0
+     * 单仓断货 - 预计库存 <= 0
      */
-    OUTAGE("OUTAGE", "断货"),
+    OUTAGE("OUTAGE", "单仓断货"),
 
     /**
-     * 风险 - 库存低于安全库存或长期未发货
+     * 全仓断货 - 由上层聚合逻辑判定，本类不实现
      */
-    AT_RISK("AT_RISK", "风险"),
+    ALLOUTAGE("ALLOUTAGE", "全仓断货"),
+
+    /**
+     * 存在断货风险 - 海运路径不可救（即使今天立即发货也无法避免断货）
+     */
+    AT_RISK("AT_RISK", "存在断货风险"),
 
     /**
      * 安全 - 库存充足
      */
-    OK("OK", "安全");
+    OK("OK", "库存安全");
 
     private final String code;
     private final String description;

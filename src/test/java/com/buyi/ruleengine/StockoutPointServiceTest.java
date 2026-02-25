@@ -34,8 +34,8 @@ public class StockoutPointServiceTest {
     public void testBasicStockoutPrediction() {
         // 测试基本断货预测
         // 当前库存100件，日均销量10件，无补货
-        // productionDays=30, shippingDays=50 => 监控范围是 (50, 80]
-        // 即只输出 offset > 50 && offset <= 80 的监控点
+        // productionDays=30, shippingDays=50, horizonDays=80
+        // 新逻辑：从第1周开始输出所有窗口
 
         CosOosPointResponse response = service.evaluateWithWeeklyShipments(
                 100,                    // currentInventory
@@ -54,13 +54,16 @@ public class StockoutPointServiceTest {
         assertNotNull(points);
         assertFalse(points.isEmpty());
 
-        // 检查第一个有效监控点（offset=56，因为需要跳过shippingDays=50）
+        // 新逻辑：第1周窗口 offset=7，inv(7)=30>0，但inv(shippingDays=50)=-400<=0 => AT_RISK
         CosOosPointDetail firstPoint = points.get(0);
-        assertEquals(56, firstPoint.getOffsetDays().intValue());
+        assertEquals(7, firstPoint.getOffsetDays().intValue());
+        // inv(7) = 100 - 70 = 30 > 0
+        assertTrue(firstPoint.getProjectedInventory().compareTo(BigDecimal.ZERO) > 0);
+        assertEquals(RiskLevel.AT_RISK, firstPoint.getRiskLevel());
 
-        // 预计库存 = 100 - 10*56 = -460 (断货)
-        assertTrue(firstPoint.getProjectedInventory().compareTo(BigDecimal.ZERO) < 0);
-        assertEquals(RiskLevel.OUTAGE, firstPoint.getRiskLevel());
+        // 第2周窗口 offset=14，inv(10)=0<=0 => OUTAGE
+        CosOosPointDetail week2 = points.get(1);
+        assertEquals(RiskLevel.OUTAGE, week2.getRiskLevel());
     }
 
     @Test
@@ -104,9 +107,10 @@ public class StockoutPointServiceTest {
     @Test
     public void testAtRiskInventoryLevel() {
         // 测试风险库存场景
-        // 当前库存800件，日均销量10件
-        // productionDays=30, shippingDays=50 => 监控范围是 (50, 80]
-        // 56天后：800 - 560 = 240 < 安全库存(10*35=350) => AT_RISK
+        // 当前库存800件，日均销量10件，无在途
+        // productionDays=30, shippingDays=50, horizonDays=80
+        // inv(shippingDays=50) = 800-500 = 300 > 0 => 无 AT_RISK 触发
+        // outageDate: inv(80) = 800-800 = 0 <= 0 => 第12周 OUTAGE
 
         CosOosPointResponse response = service.evaluateWithWeeklyShipments(
                 800,                    // currentInventory
@@ -121,8 +125,9 @@ public class StockoutPointServiceTest {
         );
 
         assertNotNull(response);
+        // 首个风险点为 OUTAGE（第12周，inv(80)=0<=0）
         assertNotNull(response.getFirstRiskPoint());
-        assertEquals(RiskLevel.AT_RISK, response.getFirstRiskPoint().getRiskLevel());
+        assertEquals(RiskLevel.OUTAGE, response.getFirstRiskPoint().getRiskLevel());
     }
 
     @Test
@@ -130,7 +135,7 @@ public class StockoutPointServiceTest {
         // 测试有补货到达的场景
         // 当前库存500件，日均销量10件
         // 在第10天发货1000件，发货时间50天，预计第60天到达
-        // productionDays=30, shippingDays=50 => 监控范围是 (50, 80]
+        // productionDays=30, shippingDays=50, horizonDays=80
 
         Map<LocalDate, Integer> shipments = new HashMap<>();
         shipments.put(baseDate.plusDays(10), 1000);
@@ -152,15 +157,20 @@ public class StockoutPointServiceTest {
         assertNotNull(points);
         assertFalse(points.isEmpty());
 
-        // 第63天监控点：500 + 1000 - 630 = 870 > 安全库存350 => OK
+        // 新逻辑（日粒度）：
+        // inv(50)=0<=0 => outageDate=baseDate+50, AT_RISK from week 1 (inv(shippingDays=50)=0<=0)
+        // 第9周(days 57-63)：days 57-59 inv<0（补货在day60到）=> OUTAGE
+        // 窗口末 inv(63) = 500+1000-630 = 870 > 0 (补货已到，窗口末库存充足)
         CosOosPointDetail point63 = points.stream()
                 .filter(p -> p.getOffsetDays() == 63)
                 .findFirst()
                 .orElse(null);
 
         assertNotNull(point63);
+        // 窗口末 projectedInventory = 870，大于0
         assertTrue(point63.getProjectedInventory().compareTo(BigDecimal.valueOf(350)) > 0);
-        assertEquals(RiskLevel.OK, point63.getRiskLevel());
+        // 日粒度：第9周内 days 57-59 inv<0（补货day60才到），所以该周为 OUTAGE
+        assertEquals(RiskLevel.OUTAGE, point63.getRiskLevel());
     }
 
     @Test
@@ -380,13 +390,14 @@ public class StockoutPointServiceTest {
 
     @Test
     public void testProductionDaysEffect() {
-        // 测试生产天数对监控范围的影响
+        // 测试生产天数不再截断监控范围
+        // 新逻辑：horizonDays 决定预测范围，productionDays 仅用于文案说明
         CosOosPointResponse response = service.evaluateWithWeeklyShipments(
                 100,
                 BigDecimal.valueOf(5),
                 null,
-                10,                     // productionDays = 10
-                20,                     // shippingDays = 20
+                10,     // productionDays
+                20,     // shippingDays
                 7,
                 7,
                 50,
@@ -395,12 +406,16 @@ public class StockoutPointServiceTest {
 
         assertNotNull(response);
         List<CosOosPointDetail> points = response.getMonitorPoints();
+        assertFalse(points.isEmpty());
 
-        // 监控点应该从 shippingDays(20) 之后开始
-        // 最大监控到 productionDays + shippingDays = 30 天
+        // 新逻辑：第1周 offset=7 开始，不跳过 shippingDays 范围内的窗口
+        assertEquals(7, points.get(0).getOffsetDays().intValue());
+        // inv(shippingDays=20) = 100-100 = 0 <= 0 => 第1周 AT_RISK
+        assertEquals(RiskLevel.AT_RISK, points.get(0).getRiskLevel());
+        // 所有窗口 offset 在 1..horizonDays=50 内，不受 productionDays 截断
         for (CosOosPointDetail point : points) {
-            assertTrue(point.getOffsetDays() > 20);
-            assertTrue(point.getOffsetDays() <= 30);
+            assertTrue(point.getOffsetDays() >= 7);
+            assertTrue(point.getOffsetDays() <= 50);
         }
     }
 
