@@ -13955,4 +13955,440 @@ END
 ;;
 delimiter ;
 
+-- ----------------------------
+-- Table structure for cos_goods_sku_params
+-- ----------------------------
+DROP TABLE IF EXISTS `cos_goods_sku_params`;
+CREATE TABLE `cos_goods_sku_params` (
+  `id` bigint NOT NULL COMMENT '主键ID（雪花）',
+  `company_id` bigint NOT NULL COMMENT '企业id',
+  `shop_id` bigint NOT NULL COMMENT '店铺id',
+  `sku_id` bigint NOT NULL COMMENT '渠道sku id（cos_goods_sku.id）',
+  `sku_code` varchar(128) DEFAULT NULL COMMENT '渠道sku编码（冗余，便于查询）',
+  `stat_date` date NOT NULL COMMENT '统计日期',
+  `platform_onhand` int NOT NULL DEFAULT '0' COMMENT '平台可售库存（cos_goods_sku_stock.sale_stock_num）',
+  `overseas_onhand` int NOT NULL DEFAULT '0' COMMENT '海外仓可售库存（wms_sku_stock 海外仓汇总）',
+  `open_intransit_qty` int NOT NULL DEFAULT '0' COMMENT '直补在途未收数量=SUM(ship_qty-receive_qty) where shipment_status=0',
+  `sales_qty_1` int NOT NULL DEFAULT '0' COMMENT '近1天销量（今日销量）',
+  `sales_qty_7` int NOT NULL DEFAULT '0' COMMENT '近7天销量',
+  `sales_qty_14` int NOT NULL DEFAULT '0' COMMENT '近14天销量',
+  `sales_qty_30` int NOT NULL DEFAULT '0' COMMENT '近30天销量',
+  `daily_demand` decimal(12,4) NOT NULL DEFAULT '0.0000' COMMENT '加权日消耗率（件/天）= 0.5*(7d/7)+0.3*(14d/14)+0.2*(30d/30)',
+  `platform_sale_days` decimal(12,2) DEFAULT NULL COMMENT '平台覆盖天数=platform_onhand/daily_demand（daily_demand>0时才计算）',
+  `oos_platform_date` date DEFAULT NULL COMMENT '预计断货日（仅平台库存）= stat_date + FLOOR(platform_onhand/daily_demand)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` bigint NOT NULL DEFAULT '0' COMMENT '删除标记：0=未删除，大于0：删除（取id值）',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uk_biz_key` (`company_id`,`shop_id`,`sku_id`,`stat_date`,`deleted`) USING BTREE,
+  KEY `idx_stat_date` (`stat_date`) USING BTREE,
+  KEY `idx_company_date` (`company_id`,`stat_date`) USING BTREE,
+  KEY `idx_oos_platform_date` (`oos_platform_date`) USING BTREE,
+  KEY `idx_shop_sku_date` (`shop_id`,`sku_id`,`stat_date`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='渠道SKU日参数快照（销量、库存、在途、需求）';
+
+-- ----------------------------
+-- Procedure structure for sp_sync_cos_goods_sku_params_daily_0227
+-- Reference version: full CTE chain → soft-delete old rows + INSERT fresh rows.
+-- Produces non-zero sales by joining cos_goods_sku_sale (platform sales)
+-- and wms_sku_stock (overseas warehouse stock) with TRIM/UPPER normalisation
+-- to tolerate minor SKU-code formatting differences.
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_sync_cos_goods_sku_params_daily_0227`;
+delimiter ;;
+CREATE PROCEDURE `sp_sync_cos_goods_sku_params_daily_0227`(
+    IN p_company_id BIGINT,
+    IN p_stat_date  DATE
+)
+BEGIN
+    -- ----------------------------------------------------------------
+    -- Replace all rows for (company, date) with freshly computed ones.
+    -- Not idempotent against partial failures; use the _daily version
+    -- for production jobs.
+    -- ----------------------------------------------------------------
+
+    -- Remove existing rows for this company+date before re-inserting
+    UPDATE cos_goods_sku_params
+    SET    deleted    = id,
+           update_time = NOW()
+    WHERE  company_id = p_company_id
+      AND  stat_date  = p_stat_date
+      AND  deleted    = 0;
+
+    INSERT INTO cos_goods_sku_params (
+        id,
+        company_id, shop_id, sku_id, sku_code,
+        stat_date,
+        platform_onhand, overseas_onhand, open_intransit_qty,
+        sales_qty_1, sales_qty_7, sales_qty_14, sales_qty_30,
+        daily_demand, platform_sale_days, oos_platform_date,
+        create_time, update_time, deleted
+    )
+    WITH
+    -- 1. base: all active channel SKUs for the target company
+    base AS (
+        SELECT
+            g.id           AS sku_id,
+            g.company_id,
+            g.shop_id,
+            TRIM(g.sku_code) AS sku_code
+        FROM cos_goods_sku g
+        WHERE g.company_id = p_company_id
+          AND g.is_delete   = 0
+    ),
+
+    -- 2. platform_stock: latest platform inventory snapshot
+    platform_stock AS (
+        SELECT
+            s.sku_id,
+            COALESCE(s.sale_stock_num, 0) AS platform_onhand
+        FROM cos_goods_sku_stock s
+        WHERE s.sync_date = p_stat_date
+          AND s.deleted   = 0
+    ),
+
+    -- 3. overseas_stock: aggregate WMS SKU stock across all warehouses.
+    --    Join by TRIM/UPPER(sku_code) to tolerate formatting differences.
+    overseas_stock AS (
+        SELECT
+            b.sku_id,
+            COALESCE(SUM(ws.sale_stock_num), 0) AS overseas_onhand
+        FROM base b
+        JOIN wms_sku_stock ws
+             ON  ws.company_id = b.company_id
+             AND ws.sync_date  = p_stat_date
+             AND ws.is_delete  = 0
+             AND TRIM(UPPER(ws.sku_code)) = TRIM(UPPER(b.sku_code))
+        GROUP BY b.sku_id
+    ),
+
+    -- 4. in_transit: open (not-yet-received) in-transit lines
+    in_transit AS (
+        SELECT
+            it.sku_id,
+            COALESCE(SUM(it.ship_qty - it.receive_qty), 0) AS open_intransit_qty
+        FROM cos_goods_sku_intransit_stock it
+        WHERE it.shipment_status = 0
+          AND it.deleted         = 0
+        GROUP BY it.sku_id
+    ),
+
+    -- 5. sales_agg: rolling sales windows from cos_goods_sku_sale (platform)
+    sales_agg AS (
+        SELECT
+            s.sku_id,
+            COALESCE(s.today_sale_num,         0) AS sales_qty_1,
+            COALESCE(s.seven_days_sale_num,    0) AS sales_qty_7,
+            COALESCE(s.fourteen_days_sale_num, 0) AS sales_qty_14,
+            COALESCE(s.thirty_days_sale_num,   0) AS sales_qty_30
+        FROM cos_goods_sku_sale s
+        WHERE s.end_date = p_stat_date
+          AND s.deleted  = 0
+    ),
+
+    -- 6. metrics: join all datasets; compute weighted daily demand.
+    --    Formula: 50% × (7d÷7) + 30% × (14d÷14) + 20% × (30d÷30)
+    metrics AS (
+        SELECT
+            b.sku_id,
+            b.company_id,
+            b.shop_id,
+            b.sku_code,
+            COALESCE(ps.platform_onhand,    0) AS platform_onhand,
+            COALESCE(os.overseas_onhand,    0) AS overseas_onhand,
+            COALESCE(it.open_intransit_qty, 0) AS open_intransit_qty,
+            COALESCE(sa.sales_qty_1,  0)       AS sales_qty_1,
+            COALESCE(sa.sales_qty_7,  0)       AS sales_qty_7,
+            COALESCE(sa.sales_qty_14, 0)       AS sales_qty_14,
+            COALESCE(sa.sales_qty_30, 0)       AS sales_qty_30,
+            -- Weighted daily demand
+            ROUND(
+                COALESCE(sa.sales_qty_7,  0) / 7.0  * 0.5 +
+                COALESCE(sa.sales_qty_14, 0) / 14.0 * 0.3 +
+                COALESCE(sa.sales_qty_30, 0) / 30.0 * 0.2,
+                4
+            ) AS daily_demand
+        FROM base b
+        LEFT JOIN platform_stock ps ON ps.sku_id = b.sku_id
+        LEFT JOIN overseas_stock  os ON os.sku_id = b.sku_id
+        LEFT JOIN in_transit       it ON it.sku_id = b.sku_id
+        LEFT JOIN sales_agg        sa ON sa.sku_id = b.sku_id
+    )
+
+    -- 7. Final SELECT with derived fields
+    SELECT
+        SnowId()                              AS id,
+        m.company_id,
+        m.shop_id,
+        m.sku_id,
+        m.sku_code,
+        p_stat_date                           AS stat_date,
+        m.platform_onhand,
+        m.overseas_onhand,
+        m.open_intransit_qty,
+        m.sales_qty_1,
+        m.sales_qty_7,
+        m.sales_qty_14,
+        m.sales_qty_30,
+        m.daily_demand,
+        -- platform_sale_days: how many days current platform stock will last
+        CASE
+            WHEN m.daily_demand > 0
+            THEN ROUND(m.platform_onhand / m.daily_demand, 2)
+            ELSE NULL
+        END                                   AS platform_sale_days,
+        -- oos_platform_date: projected date when platform stock runs out
+        CASE
+            WHEN m.daily_demand > 0
+            THEN DATE_ADD(p_stat_date, INTERVAL FLOOR(m.platform_onhand / m.daily_demand) DAY)
+            ELSE NULL
+        END                                   AS oos_platform_date,
+        NOW()                                 AS create_time,
+        NOW()                                 AS update_time,
+        0                                     AS deleted
+    FROM metrics m;
+
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_sync_cos_goods_sku_params_daily
+-- Production idempotent version.
+-- Flow:
+--   1. Dedupe existing active rows for (company, date) into temp snapshot
+--   2. Build fresh snapshot using the same CTE chain as _0227
+--   3. Upsert snapshot → cos_goods_sku_params via ON DUPLICATE KEY UPDATE
+--   4. Soft-delete stale active rows that are no longer in the snapshot
+-- Re-running is safe: no duplicate active rows are created.
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_sync_cos_goods_sku_params_daily`;
+delimiter ;;
+CREATE PROCEDURE `sp_sync_cos_goods_sku_params_daily`(
+    IN p_company_id BIGINT,
+    IN p_stat_date  DATE
+)
+BEGIN
+    -- ----------------------------------------------------------------
+    -- Step 0: Build fresh snapshot in a per-session temp table.
+    --         The temp table mirrors the target so we can drive the upsert.
+    -- ----------------------------------------------------------------
+    DROP TEMPORARY TABLE IF EXISTS tmp_sku_params_snapshot;
+    CREATE TEMPORARY TABLE tmp_sku_params_snapshot (
+        id               bigint       NOT NULL,
+        company_id       bigint       NOT NULL,
+        shop_id          bigint       NOT NULL,
+        sku_id           bigint       NOT NULL,
+        sku_code         varchar(128) DEFAULT NULL,
+        stat_date        date         NOT NULL,
+        platform_onhand  int          NOT NULL DEFAULT 0,
+        overseas_onhand  int          NOT NULL DEFAULT 0,
+        open_intransit_qty int        NOT NULL DEFAULT 0,
+        sales_qty_1      int          NOT NULL DEFAULT 0,
+        sales_qty_7      int          NOT NULL DEFAULT 0,
+        sales_qty_14     int          NOT NULL DEFAULT 0,
+        sales_qty_30     int          NOT NULL DEFAULT 0,
+        daily_demand     decimal(12,4) NOT NULL DEFAULT 0,
+        platform_sale_days decimal(12,2) DEFAULT NULL,
+        oos_platform_date  date          DEFAULT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uk_snap (company_id, shop_id, sku_id, stat_date)
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+
+    -- ----------------------------------------------------------------
+    -- Step 1: Populate snapshot – deduplicate on business key, keeping
+    --         the freshest active row (deleted=0) per (company,shop,sku,date).
+    --         Using CTE chain equivalent to _0227.
+    -- ----------------------------------------------------------------
+    INSERT INTO tmp_sku_params_snapshot (
+        id,
+        company_id, shop_id, sku_id, sku_code,
+        stat_date,
+        platform_onhand, overseas_onhand, open_intransit_qty,
+        sales_qty_1, sales_qty_7, sales_qty_14, sales_qty_30,
+        daily_demand, platform_sale_days, oos_platform_date
+    )
+    WITH
+    -- 1. base: all active channel SKUs for the target company
+    base AS (
+        SELECT
+            g.id           AS sku_id,
+            g.company_id,
+            g.shop_id,
+            TRIM(g.sku_code) AS sku_code
+        FROM cos_goods_sku g
+        WHERE g.company_id = p_company_id
+          AND g.is_delete   = 0
+    ),
+
+    -- 2. platform_stock: latest platform inventory snapshot
+    platform_stock AS (
+        SELECT
+            s.sku_id,
+            COALESCE(s.sale_stock_num, 0) AS platform_onhand
+        FROM cos_goods_sku_stock s
+        WHERE s.sync_date = p_stat_date
+          AND s.deleted   = 0
+    ),
+
+    -- 3. overseas_stock: aggregate WMS SKU stock.
+    --    TRIM/UPPER on both sides avoids zero-join from formatting mismatches.
+    overseas_stock AS (
+        SELECT
+            b.sku_id,
+            COALESCE(SUM(ws.sale_stock_num), 0) AS overseas_onhand
+        FROM base b
+        JOIN wms_sku_stock ws
+             ON  ws.company_id = b.company_id
+             AND ws.sync_date  = p_stat_date
+             AND ws.is_delete  = 0
+             AND TRIM(UPPER(ws.sku_code)) = TRIM(UPPER(b.sku_code))
+        GROUP BY b.sku_id
+    ),
+
+    -- 4. in_transit: open (not-yet-received) in-transit lines
+    in_transit AS (
+        SELECT
+            it.sku_id,
+            COALESCE(SUM(it.ship_qty - it.receive_qty), 0) AS open_intransit_qty
+        FROM cos_goods_sku_intransit_stock it
+        WHERE it.shipment_status = 0
+          AND it.deleted         = 0
+        GROUP BY it.sku_id
+    ),
+
+    -- 5. sales_agg: rolling sales windows from cos_goods_sku_sale (platform)
+    sales_agg AS (
+        SELECT
+            s.sku_id,
+            COALESCE(s.today_sale_num,         0) AS sales_qty_1,
+            COALESCE(s.seven_days_sale_num,    0) AS sales_qty_7,
+            COALESCE(s.fourteen_days_sale_num, 0) AS sales_qty_14,
+            COALESCE(s.thirty_days_sale_num,   0) AS sales_qty_30
+        FROM cos_goods_sku_sale s
+        WHERE s.end_date = p_stat_date
+          AND s.deleted  = 0
+    ),
+
+    -- 6. metrics: join all datasets; compute weighted daily demand.
+    --    Formula: 50% × (7d÷7) + 30% × (14d÷14) + 20% × (30d÷30)
+    metrics AS (
+        SELECT
+            b.sku_id,
+            b.company_id,
+            b.shop_id,
+            b.sku_code,
+            COALESCE(ps.platform_onhand,    0) AS platform_onhand,
+            COALESCE(os.overseas_onhand,    0) AS overseas_onhand,
+            COALESCE(it.open_intransit_qty, 0) AS open_intransit_qty,
+            COALESCE(sa.sales_qty_1,  0)       AS sales_qty_1,
+            COALESCE(sa.sales_qty_7,  0)       AS sales_qty_7,
+            COALESCE(sa.sales_qty_14, 0)       AS sales_qty_14,
+            COALESCE(sa.sales_qty_30, 0)       AS sales_qty_30,
+            -- Weighted daily demand
+            ROUND(
+                COALESCE(sa.sales_qty_7,  0) / 7.0  * 0.5 +
+                COALESCE(sa.sales_qty_14, 0) / 14.0 * 0.3 +
+                COALESCE(sa.sales_qty_30, 0) / 30.0 * 0.2,
+                4
+            ) AS daily_demand
+        FROM base b
+        LEFT JOIN platform_stock ps ON ps.sku_id = b.sku_id
+        LEFT JOIN overseas_stock  os ON os.sku_id = b.sku_id
+        LEFT JOIN in_transit       it ON it.sku_id = b.sku_id
+        LEFT JOIN sales_agg        sa ON sa.sku_id = b.sku_id
+    )
+
+    -- 7. Deduplicated final set (one row per business key)
+    SELECT
+        SnowId()                              AS id,
+        m.company_id,
+        m.shop_id,
+        m.sku_id,
+        m.sku_code,
+        p_stat_date                           AS stat_date,
+        m.platform_onhand,
+        m.overseas_onhand,
+        m.open_intransit_qty,
+        m.sales_qty_1,
+        m.sales_qty_7,
+        m.sales_qty_14,
+        m.sales_qty_30,
+        m.daily_demand,
+        -- platform_sale_days: how many days current platform stock will last
+        CASE
+            WHEN m.daily_demand > 0
+            THEN ROUND(m.platform_onhand / m.daily_demand, 2)
+            ELSE NULL
+        END                                   AS platform_sale_days,
+        -- oos_platform_date: projected date when platform stock runs out
+        CASE
+            WHEN m.daily_demand > 0
+            THEN DATE_ADD(p_stat_date, INTERVAL FLOOR(m.platform_onhand / m.daily_demand) DAY)
+            ELSE NULL
+        END                                   AS oos_platform_date
+    FROM metrics m;
+
+    -- ----------------------------------------------------------------
+    -- Step 2: Upsert snapshot → target table.
+    --         On key conflict (same company/shop/sku/date/deleted=0)
+    --         update all mutable metric columns.
+    -- ----------------------------------------------------------------
+    INSERT INTO cos_goods_sku_params (
+        id,
+        company_id, shop_id, sku_id, sku_code,
+        stat_date,
+        platform_onhand, overseas_onhand, open_intransit_qty,
+        sales_qty_1, sales_qty_7, sales_qty_14, sales_qty_30,
+        daily_demand, platform_sale_days, oos_platform_date,
+        create_time, update_time, deleted
+    )
+    SELECT
+        snap.id,
+        snap.company_id, snap.shop_id, snap.sku_id, snap.sku_code,
+        snap.stat_date,
+        snap.platform_onhand, snap.overseas_onhand, snap.open_intransit_qty,
+        snap.sales_qty_1, snap.sales_qty_7, snap.sales_qty_14, snap.sales_qty_30,
+        snap.daily_demand, snap.platform_sale_days, snap.oos_platform_date,
+        NOW(), NOW(), 0
+    FROM tmp_sku_params_snapshot snap
+    ON DUPLICATE KEY UPDATE
+        platform_onhand    = VALUES(platform_onhand),
+        overseas_onhand    = VALUES(overseas_onhand),
+        open_intransit_qty = VALUES(open_intransit_qty),
+        sales_qty_1        = VALUES(sales_qty_1),
+        sales_qty_7        = VALUES(sales_qty_7),
+        sales_qty_14       = VALUES(sales_qty_14),
+        sales_qty_30       = VALUES(sales_qty_30),
+        daily_demand       = VALUES(daily_demand),
+        platform_sale_days = VALUES(platform_sale_days),
+        oos_platform_date  = VALUES(oos_platform_date),
+        update_time        = NOW();
+
+    -- ----------------------------------------------------------------
+    -- Step 3: Soft-delete stale rows.
+    --         Any active (deleted=0) row for this company+date that is
+    --         NOT represented in the current snapshot is stale and should
+    --         be soft-deleted (deleted = id to preserve the row value).
+    -- ----------------------------------------------------------------
+    UPDATE cos_goods_sku_params tgt
+    LEFT JOIN tmp_sku_params_snapshot snap
+           ON snap.company_id = tgt.company_id
+          AND snap.shop_id    = tgt.shop_id
+          AND snap.sku_id     = tgt.sku_id
+          AND snap.stat_date  = tgt.stat_date
+    SET    tgt.deleted     = tgt.id,
+           tgt.update_time = NOW()
+    WHERE  tgt.company_id  = p_company_id
+      AND  tgt.stat_date   = p_stat_date
+      AND  tgt.deleted     = 0
+      AND  snap.sku_id     IS NULL;   -- not in snapshot → stale
+
+    -- Cleanup
+    DROP TEMPORARY TABLE IF EXISTS tmp_sku_params_snapshot;
+
+END
+;;
+delimiter ;
+
 SET FOREIGN_KEY_CHECKS = 1;
