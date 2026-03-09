@@ -13955,4 +13955,617 @@ END
 ;;
 delimiter ;
 
+-- ----------------------------
+-- Table structure for cos_goods_sku_params_daily
+-- ----------------------------
+DROP TABLE IF EXISTS `cos_goods_sku_params_daily`;
+CREATE TABLE `cos_goods_sku_params_daily` (
+  `id`                   bigint        NOT NULL                COMMENT '主键ID（SnowId）',
+  `company_id`           bigint        NOT NULL                COMMENT '企业id',
+  `shop_id`              bigint        NOT NULL                COMMENT '店铺id（COS系统）',
+  `site_code`            varchar(20)   NOT NULL DEFAULT ''     COMMENT '站点编码（来自 amf_lx_shop.site_code）',
+  `sku_code`             varchar(128)  NOT NULL                COMMENT '渠道SKU编码（channel SKU，UPPER+TRIM 标准化）',
+  `commodity_id`         bigint        DEFAULT NULL            COMMENT '国内产品id（SPU，可选冗余）',
+  `monitor_date`         date          NOT NULL                COMMENT '统计日期（快照日期）',
+  -- 销量指标
+  `sale_7d`              int           NOT NULL DEFAULT 0      COMMENT '近7天销量（JH+FBA+MP合计）',
+  `sale_30d`             int           NOT NULL DEFAULT 0      COMMENT '近30天销量（JH+FBA+MP合计）',
+  `daily_demand`         decimal(12,4) NOT NULL DEFAULT 0      COMMENT '加权日均需求（件/天）：7d/7*0.6 + 30d/30*0.4',
+  `platform_sale_days`   int           NOT NULL DEFAULT 0      COMMENT '近30天有销售的天数',
+  -- 海外库存
+  `overseas_stock_jh`    int           NOT NULL DEFAULT 0      COMMENT '鲸汇海外仓可售库存（amf_jh_warehouse_stock_his）',
+  `overseas_stock_fba`   int           NOT NULL DEFAULT 0      COMMENT '领星FBA可售库存（amf_lx_fbadetail.afn_fulfillable_quantity）',
+  `overseas_stock_total` int           NOT NULL DEFAULT 0      COMMENT '海外库存合计（JH + FBA）',
+  -- 国内库存
+  `domestic_stock`       int           NOT NULL DEFAULT 0      COMMENT '国内仓可用库存（amf_jh_company_stock.remaining_num）',
+  -- 在途
+  `intransit_fba`        int           NOT NULL DEFAULT 0      COMMENT 'FBA在途数量（领星 amf_lx_fbashipment_item）',
+  `intransit_owms`       int           NOT NULL DEFAULT 0      COMMENT 'OWMS在途数量（领星 amf_lx_shipment_products）',
+  `intransit_jh`         int           NOT NULL DEFAULT 0      COMMENT 'JH在途数量（鲸汇 amf_jh_shipment_sku）',
+  `intransit_total`      int           NOT NULL DEFAULT 0      COMMENT '在途合计（FBA + OWMS + JH）',
+  -- 预警指标
+  `doc_overseas`         decimal(12,2) DEFAULT NULL            COMMENT '海外库存可售天数=overseas_stock_total/daily_demand',
+  `oos_platform_date`    date          DEFAULT NULL            COMMENT '预计断货日（按海外库存估算）',
+  -- 补货配置冗余（便于查阅）
+  `safety_days`          int           DEFAULT NULL            COMMENT '平台仓安全库存天数（来自 cos_goods_sku_stocking_config）',
+  `lead_time_days`       int           DEFAULT NULL            COMMENT '前置时间天数（来自 cos_goods_sku_stocking_config）',
+  -- 元数据
+  `reason_json`          json          DEFAULT NULL            COMMENT '计算明细快照（可选调试）',
+  `create_time`          datetime      NOT NULL DEFAULT CURRENT_TIMESTAMP               COMMENT '创建时间',
+  `update_time`          datetime      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted`              bigint        NOT NULL DEFAULT 0      COMMENT '删除标记：0=未删除，大于0（通常为行ID）=已软删',
+  PRIMARY KEY (`id`),
+  -- 目标表唯一键：同一企业/店铺/站点/SKU/日期/删除状态 唯一
+  UNIQUE KEY `uk_company_shop_site_sku_date` (`company_id`,`shop_id`,`site_code`,`sku_code`,`monitor_date`,`deleted`),
+  KEY `idx_monitor_date`        (`monitor_date`),
+  KEY `idx_company_date`        (`company_id`,`monitor_date`),
+  KEY `idx_company_shop_date`   (`company_id`,`shop_id`,`monitor_date`),
+  KEY `idx_oos_platform_date`   (`oos_platform_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='渠道SKU日度参数快照表（销量/库存/在途/预警指标，幂等写入）';
+
+-- ----------------------------
+-- Procedure structure for sp_sync_cos_goods_sku_params_daily
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_sync_cos_goods_sku_params_daily`;
+delimiter ;;
+CREATE PROCEDURE `sp_sync_cos_goods_sku_params_daily`(
+    IN p_date DATE
+    -- 统计日期：NULL 则取当天（CURDATE()）
+    -- 可重复执行（幂等）：已有数据会被 ON DUPLICATE KEY UPDATE 覆盖；
+    --                       本次未覆盖的旧行会被软删。
+)
+BEGIN
+    -- ============================================================
+    -- 存储过程：sp_sync_cos_goods_sku_params_daily
+    -- 功能    ：计算每日渠道SKU参数快照（日销量/海外库存/国内库存/在途/预警等）
+    -- 对齐版本：sp_sync_cos_goods_sku_params_daily_0227 业务逻辑
+    -- CTE链   ：base → jh_ow_latest_before_d → jh_ow_sale_num_shop_sku
+    --           → jh_overseas_latest_today → jh_overseas_stock_today
+    --           → lx_overseas_stock_today → ow_overseas_stock_sum
+    --           → jh_intransit → lx_fba_intransit → lx_owms_intransit
+    --           → jh_company_stock_latest_date → jh_company_stock_latest
+    --           → jh_sales, fba_sales, mp → metrics → calc
+    -- 幂等写法：① 当天历史去重 → ② 快照写临时表 →
+    --           ③ ON DUPLICATE KEY UPDATE upsert → ④ 差量软删
+    -- ============================================================
+
+    DECLARE v_today DATE;
+    -- 日均需求加权系数：近7天权重0.6，近30天权重0.4
+    DECLARE v_weight_7d  DECIMAL(3,2) DEFAULT 0.6;
+    DECLARE v_weight_30d DECIMAL(3,2) DEFAULT 0.4;
+
+    SET v_today = COALESCE(p_date, CURDATE());
+
+    -- ============================================================
+    -- Step 1：当天历史数据按业务键去重，保留 id 最大（最新）的一条
+    --         保证多次执行不积累重复快照
+    -- ============================================================
+    DELETE t1
+    FROM  cos_goods_sku_params_daily t1
+    INNER JOIN cos_goods_sku_params_daily t2
+           ON  t1.company_id   = t2.company_id
+           AND t1.shop_id      = t2.shop_id
+           AND t1.site_code    = t2.site_code
+           AND t1.sku_code     = t2.sku_code
+           AND t1.monitor_date = t2.monitor_date
+           AND t1.deleted      = t2.deleted
+           AND t1.id < t2.id   -- 保留较大（较新）id
+    WHERE  t1.monitor_date = v_today;
+
+    -- ============================================================
+    -- Step 2：临时表存放本次快照结果
+    -- ============================================================
+    DROP TEMPORARY TABLE IF EXISTS tmp_sku_params_snapshot;
+    CREATE TEMPORARY TABLE tmp_sku_params_snapshot (
+        company_id          BIGINT         NOT NULL,
+        shop_id             BIGINT         NOT NULL,
+        site_code           VARCHAR(20)    NOT NULL DEFAULT '',
+        sku_code            VARCHAR(128)   NOT NULL,
+        commodity_id        BIGINT         DEFAULT NULL,
+        monitor_date        DATE           NOT NULL,
+        sale_7d             INT            NOT NULL DEFAULT 0,
+        sale_30d            INT            NOT NULL DEFAULT 0,
+        daily_demand        DECIMAL(12,4)  NOT NULL DEFAULT 0,
+        platform_sale_days  INT            NOT NULL DEFAULT 0,
+        overseas_stock_jh   INT            NOT NULL DEFAULT 0,
+        overseas_stock_fba  INT            NOT NULL DEFAULT 0,
+        overseas_stock_total INT           NOT NULL DEFAULT 0,
+        domestic_stock      INT            NOT NULL DEFAULT 0,
+        intransit_fba       INT            NOT NULL DEFAULT 0,
+        intransit_owms      INT            NOT NULL DEFAULT 0,
+        intransit_jh        INT            NOT NULL DEFAULT 0,
+        intransit_total     INT            NOT NULL DEFAULT 0,
+        doc_overseas        DECIMAL(12,2)  DEFAULT NULL,
+        oos_platform_date   DATE           DEFAULT NULL,
+        safety_days         INT            DEFAULT NULL,
+        lead_time_days      INT            DEFAULT NULL
+    );
+
+    -- ============================================================
+    -- Step 3：CTE 链计算并写入临时表
+    -- ============================================================
+    INSERT INTO tmp_sku_params_snapshot
+    WITH
+    -- ----------------------------------------------------------
+    -- base：渠道SKU基础维度
+    --   cos_goods_sku（company_id / shop_id / sku_code）
+    --   LEFT JOIN amf_lx_shop（s_id = shop_id）→ 取 site_code
+    -- ----------------------------------------------------------
+    base AS (
+        SELECT
+            cgs.company_id,
+            cgs.shop_id,
+            COALESCE(ls.site_code, '')        AS site_code,
+            TRIM(UPPER(cgs.sku_code))         AS sku_code,
+            cgs.id                            AS cos_sku_id
+        FROM  cos_goods_sku cgs
+        LEFT  JOIN amf_lx_shop ls ON ls.s_id = cgs.shop_id
+        WHERE cgs.is_delete = 0
+          AND cgs.sku_code  IS NOT NULL
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_ow_latest_before_d：统计日 v_today 之前
+    --   JH 海外仓每个（仓库 + SKU）最新快照日期
+    --   用途：判断前日快照可用性，为 jh_ow_sale_num_shop_sku 提供参考
+    -- ----------------------------------------------------------
+    jh_ow_latest_before_d AS (
+        SELECT
+            warehouse_id,
+            TRIM(UPPER(warehouse_sku)) AS sku_key,
+            MAX(doc_date)              AS latest_date
+        FROM  amf_jh_warehouse_stock_his
+        WHERE DATE(doc_date) < v_today
+        GROUP BY warehouse_id, TRIM(UPPER(warehouse_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_ow_sale_num_shop_sku：JH 系统各 shop/SKU 近 30 天订单销量
+    --   关联 jh_ow_latest_before_d 确认该 SKU 历史上有海外仓快照
+    --   （即只统计在 JH 海外仓有库存记录的 SKU 的销量）
+    --   join 键用 TRIM/UPPER 保证命中率
+    -- ----------------------------------------------------------
+    jh_ow_sale_num_shop_sku AS (
+        SELECT
+            o.shop_id                                         AS shop_id,
+            TRIM(UPPER(o.sell_sku))                           AS sku_code,
+            SUM(CASE
+                    WHEN DATE(o.purchase_date) >= DATE_SUB(v_today, INTERVAL 7 DAY)
+                    THEN COALESCE(o.quantity_ordered, 0)
+                    ELSE 0
+                END)                                          AS sale_7d,
+            SUM(COALESCE(o.quantity_ordered, 0))              AS sale_30d,
+            COUNT(DISTINCT DATE(o.purchase_date))             AS sale_days
+        FROM  amf_jh_orders o
+        -- 仅统计有海外仓库存快照的 SKU（通过 amf_jh_shop_warehouse_stock 关联）
+        INNER JOIN amf_jh_shop_warehouse_stock sws
+               ON  sws.shop_id      = o.shop_id
+               AND TRIM(UPPER(sws.warehouse_sku)) = TRIM(UPPER(o.sell_sku))
+        WHERE o.order_status IN ('Shipped', 'Delivered', 'Completed', 'delivering')
+          AND DATE(o.purchase_date) >= DATE_SUB(v_today, INTERVAL 30 DAY)
+          AND DATE(o.purchase_date)  < v_today
+          AND o.sell_sku IS NOT NULL
+        GROUP BY o.shop_id, TRIM(UPPER(o.sell_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_overseas_latest_today：截至 v_today 最新的
+    --   JH 海外仓库存快照（每个 warehouse_id + sku_key 取最近一条）
+    -- ----------------------------------------------------------
+    jh_overseas_latest_today AS (
+        SELECT
+            h.warehouse_id,
+            TRIM(UPPER(h.warehouse_sku)) AS sku_key,
+            h.out_available_qty
+        FROM  amf_jh_warehouse_stock_his h
+        INNER JOIN (
+            SELECT
+                warehouse_id,
+                TRIM(UPPER(warehouse_sku)) AS sku_key,
+                MAX(doc_date)              AS max_date
+            FROM  amf_jh_warehouse_stock_his
+            WHERE DATE(doc_date) <= v_today
+            GROUP BY warehouse_id, TRIM(UPPER(warehouse_sku))
+        ) t ON  h.warehouse_id                 = t.warehouse_id
+            AND TRIM(UPPER(h.warehouse_sku))   = t.sku_key
+            AND h.doc_date                     = t.max_date
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_overseas_stock_today：JH 各 shop+sku 当日海外可售库存
+    --   amf_jh_shop_warehouse_stock（shop_id / warehouse_id / warehouse_sku）
+    --   LEFT JOIN jh_overseas_latest_today → out_available_qty
+    -- ----------------------------------------------------------
+    jh_overseas_stock_today AS (
+        SELECT
+            sws.shop_id,
+            TRIM(UPPER(sws.warehouse_sku))               AS sku_code,
+            COALESCE(SUM(jol.out_available_qty), 0)      AS overseas_stock_jh
+        FROM  amf_jh_shop_warehouse_stock sws
+        LEFT  JOIN jh_overseas_latest_today jol
+               ON  jol.warehouse_id = sws.warehouse_id
+               AND jol.sku_key      = TRIM(UPPER(sws.warehouse_sku))
+        GROUP BY sws.shop_id, TRIM(UPPER(sws.warehouse_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- lx_overseas_stock_today：领星 FBA 当日可售库存
+    --   amf_lx_fbadetail.afn_fulfillable_quantity
+    --   取 sync_date = v_today，如无则取最近一次 sync_date
+    -- ----------------------------------------------------------
+    lx_overseas_stock_today AS (
+        SELECT
+            fd.sid                                          AS shop_id,
+            TRIM(UPPER(fd.seller_sku))                      AS sku_code,
+            COALESCE(SUM(fd.afn_fulfillable_quantity), 0)   AS overseas_stock_fba
+        FROM  amf_lx_fbadetail fd
+        WHERE fd.isdel = 0
+          AND fd.sync_date = (
+              SELECT MAX(sync_date)
+              FROM   amf_lx_fbadetail
+              WHERE  isdel = 0
+                AND  sync_date <= v_today
+          )
+        GROUP BY fd.sid, TRIM(UPPER(fd.seller_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- ow_overseas_stock_sum：海外库存合计（JH 海外仓 + FBA）
+    --   MySQL 不支持 FULL OUTER JOIN，用 UNION ALL 模拟
+    -- ----------------------------------------------------------
+    ow_overseas_stock_sum AS (
+        SELECT
+            shop_id,
+            sku_code,
+            SUM(overseas_stock_jh)                               AS overseas_stock_jh,
+            SUM(overseas_stock_fba)                              AS overseas_stock_fba,
+            SUM(overseas_stock_jh) + SUM(overseas_stock_fba)    AS overseas_stock_total
+        FROM (
+            SELECT shop_id, sku_code, overseas_stock_jh, 0 AS overseas_stock_fba
+            FROM   jh_overseas_stock_today
+            UNION ALL
+            SELECT shop_id, sku_code, 0 AS overseas_stock_jh, overseas_stock_fba
+            FROM   lx_overseas_stock_today
+        ) t
+        GROUP BY shop_id, sku_code
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_intransit：鲸汇系统在途数量
+    --   amf_jh_shipment（status=0 表示发货中/未完成）
+    --   INNER JOIN amf_jh_shipment_sku → ship_qty - receive_qty = 未收货数
+    -- ----------------------------------------------------------
+    jh_intransit AS (
+        SELECT
+            ss.shop_id,
+            TRIM(UPPER(ss.warehouse_sku))                              AS sku_code,
+            SUM(GREATEST(ss.ship_qty - COALESCE(ss.receive_qty, 0), 0)) AS intransit_jh
+        FROM  amf_jh_shipment_sku ss
+        INNER JOIN amf_jh_shipment s ON s.id = ss.property_shipment_id
+        WHERE s.status = 0   -- 0=在途未完成；2=完成
+        GROUP BY ss.shop_id, TRIM(UPPER(ss.warehouse_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- lx_fba_intransit：领星 FBA 发货单在途数量
+    --   amf_lx_fbashipment_item（shipment_status 非 CLOSED/CANCELLED）
+    --   INNER JOIN amf_lx_fbashipment 确认主单未删除
+    -- ----------------------------------------------------------
+    lx_fba_intransit AS (
+        SELECT
+            fi.sid                             AS shop_id,
+            TRIM(UPPER(fi.sku))                AS sku_code,
+            SUM(COALESCE(fi.num, 0))           AS intransit_fba
+        FROM  amf_lx_fbashipment_item fi
+        INNER JOIN amf_lx_fbashipment fs ON fs.id = fi.shipment_id
+        WHERE fi.is_delete = 0
+          AND fs.is_delete = 0
+          AND TRIM(UPPER(fi.shipment_status)) NOT IN ('CLOSED', 'CANCELLED', 'DELETED', 'RECEIVED')
+        GROUP BY fi.sid, TRIM(UPPER(fi.sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- lx_owms_intransit：领星 OWMS（海外仓 WMS）在途数量
+    --   amf_lx_shipment_products.wait_receive_num（待收货数）
+    --   status: 10=待发货, 20=发货中, 30=已发货待收货, 50=部分收货
+    -- ----------------------------------------------------------
+    lx_owms_intransit AS (
+        SELECT
+            TRIM(UPPER(sp.sku))          AS sku_code,
+            SUM(sp.wait_receive_num)     AS intransit_owms
+        FROM  amf_lx_shipment_products sp
+        INNER JOIN amf_lx_shipment s ON s.id = sp.shipment_id
+        WHERE s.is_delete = 0
+          AND s.status IN (10, 20, 30, 50)
+        GROUP BY TRIM(UPPER(sp.sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_company_stock_latest_date：国内仓（公司库存）最新快照日期
+    --   取 <= v_today 的最大 sync_date
+    -- ----------------------------------------------------------
+    jh_company_stock_latest_date AS (
+        SELECT MAX(sync_date) AS latest_date
+        FROM   amf_jh_company_stock
+        WHERE  sync_date <= v_today
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_company_stock_latest：国内仓最新可用库存（按 local_sku 汇总）
+    --   remaining_num = 可用/剩余库存
+    -- ----------------------------------------------------------
+    jh_company_stock_latest AS (
+        SELECT
+            TRIM(UPPER(cs.local_sku))             AS sku_code,
+            SUM(COALESCE(cs.remaining_num, 0))    AS domestic_stock
+        FROM  amf_jh_company_stock cs
+        INNER JOIN jh_company_stock_latest_date d ON cs.sync_date = d.latest_date
+        GROUP BY TRIM(UPPER(cs.local_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- jh_sales：鲸汇平台近 7/30 天全渠道销量
+    --   来源：amf_jh_orders（含所有平台订单）
+    --   join 键 sell_sku 用 TRIM/UPPER 确保命中
+    -- ----------------------------------------------------------
+    jh_sales AS (
+        SELECT
+            o.shop_id                                          AS shop_id,
+            TRIM(UPPER(o.sell_sku))                            AS sku_code,
+            SUM(CASE
+                    WHEN DATE(o.purchase_date) >= DATE_SUB(v_today, INTERVAL 7 DAY)
+                    THEN COALESCE(o.quantity_ordered, 0)
+                    ELSE 0
+                END)                                           AS sale_7d,
+            SUM(COALESCE(o.quantity_ordered, 0))               AS sale_30d,
+            COUNT(DISTINCT DATE(o.purchase_date))              AS sale_days
+        FROM  amf_jh_orders o
+        WHERE o.order_status IN ('Shipped', 'Delivered', 'Completed', 'delivering')
+          AND DATE(o.purchase_date) >= DATE_SUB(v_today, INTERVAL 30 DAY)
+          AND DATE(o.purchase_date)  < v_today
+          AND o.sell_sku IS NOT NULL
+        GROUP BY o.shop_id, TRIM(UPPER(o.sell_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- fba_sales：领星 Amazon FBA 近 7/30 天销量
+    --   来源：amf_lx_amzorder（AFN 渠道，非退货）
+    --         INNER JOIN amf_lx_amzorder_item（seller_sku / quantity_ordered）
+    -- ----------------------------------------------------------
+    fba_sales AS (
+        SELECT
+            CAST(a.sid AS UNSIGNED)                            AS shop_id,
+            TRIM(UPPER(ai.seller_sku))                         AS sku_code,
+            SUM(CASE
+                    WHEN a.purchase_date_utc >= DATE_SUB(v_today, INTERVAL 7 DAY)
+                    THEN COALESCE(ai.quantity_ordered, 0)
+                    ELSE 0
+                END)                                           AS sale_7d,
+            SUM(COALESCE(ai.quantity_ordered, 0))              AS sale_30d,
+            COUNT(DISTINCT DATE(a.purchase_date_utc))          AS sale_days
+        FROM  amf_lx_amzorder a
+        INNER JOIN amf_lx_amzorder_item ai ON ai.amazon_order_id = a.amazon_order_id
+        WHERE a.fulfillment_channel = 'AFN'
+          AND a.is_return_order     = 0
+          AND a.order_status        IN ('Shipped', 'Pending', 'Unshipped')
+          AND a.purchase_date_utc  >= DATE_SUB(v_today, INTERVAL 30 DAY)
+          AND a.purchase_date_utc   < v_today
+          AND ai.seller_sku IS NOT NULL
+        GROUP BY CAST(a.sid AS UNSIGNED), TRIM(UPPER(ai.seller_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- mp：领星多平台（TikTok/Walmart/eBay 等）近 7/30 天销量
+    --   来源：amf_lx_mporders + amf_lx_mporders_item
+    --   global_purchase_time 为毫秒时间戳
+    -- ----------------------------------------------------------
+    mp AS (
+        SELECT
+            CAST(o.store_id AS UNSIGNED)                       AS shop_id,
+            TRIM(UPPER(oi.local_sku))                          AS sku_code,
+            SUM(CASE
+                    WHEN FROM_UNIXTIME(o.global_purchase_time / 1000)
+                             >= DATE_SUB(v_today, INTERVAL 7 DAY)
+                    THEN COALESCE(oi.quantity, 0)
+                    ELSE 0
+                END)                                           AS sale_7d,
+            SUM(COALESCE(oi.quantity, 0))                      AS sale_30d,
+            COUNT(DISTINCT DATE(FROM_UNIXTIME(o.global_purchase_time / 1000))) AS sale_days
+        FROM  amf_lx_mporders o
+        INNER JOIN amf_lx_mporders_item oi ON oi.global_order_no = o.global_order_no
+        WHERE o.is_delete  = 0
+          AND oi.is_delete = 0
+          AND o.global_purchase_time IS NOT NULL
+          AND FROM_UNIXTIME(o.global_purchase_time / 1000) >= DATE_SUB(v_today, INTERVAL 30 DAY)
+          AND FROM_UNIXTIME(o.global_purchase_time / 1000)  < v_today
+          AND oi.local_sku IS NOT NULL
+        GROUP BY CAST(o.store_id AS UNSIGNED), TRIM(UPPER(oi.local_sku))
+    ),
+
+    -- ----------------------------------------------------------
+    -- metrics：综合销量指标（合并 jh_sales + fba_sales + mp）
+    --   daily_demand = 7天日均 * 0.6 + 30天日均 * 0.4（加权平均）
+    --   platform_sale_days = 三渠道中最大有销售天数
+    -- ----------------------------------------------------------
+    metrics AS (
+        SELECT
+            shop_id,
+            sku_code,
+            SUM(sale_7d)                                              AS sale_7d,
+            SUM(sale_30d)                                             AS sale_30d,
+            MAX(sale_days)                                            AS platform_sale_days,
+            ROUND(
+                CASE
+                    WHEN SUM(sale_30d) > 0
+                    THEN SUM(sale_7d) / 7.0 * v_weight_7d + SUM(sale_30d) / 30.0 * v_weight_30d
+                    WHEN SUM(sale_7d) > 0
+                    THEN SUM(sale_7d) / 7.0
+                    ELSE 0
+                END,
+            4) AS daily_demand
+        FROM (
+            SELECT shop_id, sku_code, sale_7d, sale_30d, sale_days FROM jh_sales
+            UNION ALL
+            SELECT shop_id, sku_code, sale_7d, sale_30d, sale_days FROM fba_sales
+            UNION ALL
+            SELECT shop_id, sku_code, sale_7d, sale_30d, sale_days FROM mp
+        ) t
+        GROUP BY shop_id, sku_code
+    ),
+
+    -- ----------------------------------------------------------
+    -- calc：最终计算，关联所有维度，输出目标字段
+    -- ----------------------------------------------------------
+    calc AS (
+        SELECT
+            b.company_id,
+            b.shop_id,
+            b.site_code,
+            b.sku_code,
+            NULL                                                AS commodity_id,
+            v_today                                             AS monitor_date,
+            -- 销量
+            COALESCE(m.sale_7d,              0)                AS sale_7d,
+            COALESCE(m.sale_30d,             0)                AS sale_30d,
+            COALESCE(m.daily_demand,         0)                AS daily_demand,
+            COALESCE(m.platform_sale_days,   0)                AS platform_sale_days,
+            -- 海外库存
+            COALESCE(ow.overseas_stock_jh,   0)                AS overseas_stock_jh,
+            COALESCE(ow.overseas_stock_fba,  0)                AS overseas_stock_fba,
+            COALESCE(ow.overseas_stock_total,0)                AS overseas_stock_total,
+            -- 国内库存
+            COALESCE(dom.domestic_stock,     0)                AS domestic_stock,
+            -- 在途
+            COALESCE(fi.intransit_fba,       0)                AS intransit_fba,
+            COALESCE(lo.intransit_owms,      0)                AS intransit_owms,
+            COALESCE(ji.intransit_jh,        0)                AS intransit_jh,
+            COALESCE(fi.intransit_fba, 0) + COALESCE(lo.intransit_owms, 0)
+                + COALESCE(ji.intransit_jh, 0)                 AS intransit_total,
+            -- 海外库存可售天数
+            CASE
+                WHEN COALESCE(m.daily_demand, 0) > 0
+                THEN ROUND(COALESCE(ow.overseas_stock_total, 0) / m.daily_demand, 2)
+                ELSE NULL
+            END                                                AS doc_overseas,
+            -- 预计断货日（按海外库存 / 日均消耗）
+            CASE
+                WHEN COALESCE(m.daily_demand, 0) > 0
+                THEN DATE_ADD(v_today,
+                         INTERVAL CEIL(COALESCE(ow.overseas_stock_total, 0)
+                                       / m.daily_demand) DAY)
+                ELSE NULL
+            END                                                AS oos_platform_date,
+            -- 补货配置（来自 cos_goods_sku_stocking_config）
+            cfg.platform_warehouse_safety_days                 AS safety_days,
+            cfg.platform_warehouse_lead_time                   AS lead_time_days
+        FROM  base b
+        -- 销量指标（shop_id + sku_code 关联）
+        LEFT  JOIN metrics m
+               ON  m.shop_id  = b.shop_id
+               AND m.sku_code = b.sku_code
+        -- 海外库存汇总（shop_id + sku_code 关联）
+        LEFT  JOIN ow_overseas_stock_sum ow
+               ON  ow.shop_id  = b.shop_id
+               AND ow.sku_code = b.sku_code
+        -- 国内库存（sku_code 直接关联：JH 仓库 SKU = channel SKU）
+        LEFT  JOIN jh_company_stock_latest dom
+               ON  dom.sku_code = b.sku_code
+        -- FBA 在途（shop_id + sku_code 关联）
+        LEFT  JOIN lx_fba_intransit fi
+               ON  fi.shop_id  = b.shop_id
+               AND fi.sku_code = b.sku_code
+        -- OWMS 在途（仅 sku_code 关联）
+        LEFT  JOIN lx_owms_intransit lo
+               ON  lo.sku_code = b.sku_code
+        -- JH 在途（shop_id + sku_code 关联）
+        LEFT  JOIN jh_intransit ji
+               ON  ji.shop_id  = b.shop_id
+               AND ji.sku_code = b.sku_code
+        -- 补货配置（company_id + shop_id + sku_id 关联）
+        LEFT  JOIN cos_goods_sku_stocking_config cfg
+               ON  cfg.company_id  = b.company_id
+               AND cfg.shop_id     = b.shop_id
+               AND cfg.goods_sku_id = b.cos_sku_id
+               AND cfg.deleted     = 0
+    )
+    SELECT
+        company_id, shop_id, site_code, sku_code, commodity_id,
+        monitor_date, sale_7d, sale_30d, daily_demand, platform_sale_days,
+        overseas_stock_jh, overseas_stock_fba, overseas_stock_total,
+        domestic_stock, intransit_fba, intransit_owms, intransit_jh, intransit_total,
+        doc_overseas, oos_platform_date, safety_days, lead_time_days
+    FROM calc;
+
+    -- ============================================================
+    -- Step 4：ON DUPLICATE KEY UPDATE upsert 写入目标表
+    --   唯一键：(company_id, shop_id, site_code, sku_code, monitor_date, deleted=0)
+    --   冲突时更新所有指标字段，保留原始 id 和 create_time
+    -- ============================================================
+    INSERT INTO cos_goods_sku_params_daily (
+        id,
+        company_id, shop_id, site_code, sku_code, commodity_id,
+        monitor_date, sale_7d, sale_30d, daily_demand, platform_sale_days,
+        overseas_stock_jh, overseas_stock_fba, overseas_stock_total,
+        domestic_stock, intransit_fba, intransit_owms, intransit_jh, intransit_total,
+        doc_overseas, oos_platform_date,
+        safety_days, lead_time_days,
+        deleted
+    )
+    SELECT
+        next_id(),
+        company_id, shop_id, site_code, sku_code, commodity_id,
+        monitor_date, sale_7d, sale_30d, daily_demand, platform_sale_days,
+        overseas_stock_jh, overseas_stock_fba, overseas_stock_total,
+        domestic_stock, intransit_fba, intransit_owms, intransit_jh, intransit_total,
+        doc_overseas, oos_platform_date,
+        safety_days, lead_time_days,
+        0   -- deleted = 0（活跃行）
+    FROM tmp_sku_params_snapshot
+    ON DUPLICATE KEY UPDATE
+        sale_7d              = VALUES(sale_7d),
+        sale_30d             = VALUES(sale_30d),
+        daily_demand         = VALUES(daily_demand),
+        platform_sale_days   = VALUES(platform_sale_days),
+        overseas_stock_jh    = VALUES(overseas_stock_jh),
+        overseas_stock_fba   = VALUES(overseas_stock_fba),
+        overseas_stock_total = VALUES(overseas_stock_total),
+        domestic_stock       = VALUES(domestic_stock),
+        intransit_fba        = VALUES(intransit_fba),
+        intransit_owms       = VALUES(intransit_owms),
+        intransit_jh         = VALUES(intransit_jh),
+        intransit_total      = VALUES(intransit_total),
+        doc_overseas         = VALUES(doc_overseas),
+        oos_platform_date    = VALUES(oos_platform_date),
+        safety_days          = VALUES(safety_days),
+        lead_time_days       = VALUES(lead_time_days),
+        update_time          = NOW();
+
+    -- ============================================================
+    -- Step 5：差量软删 — 标记本次未覆盖的旧行
+    --   条件：monitor_date = v_today AND deleted = 0
+    --         AND (company_id, shop_id, site_code, sku_code) 不在本次快照中
+    --   软删值设为行自身 id（> 0，唯一键不冲突）
+    -- ============================================================
+    UPDATE cos_goods_sku_params_daily d
+    SET    d.deleted     = d.id,
+           d.update_time = NOW()
+    WHERE  d.monitor_date = v_today
+      AND  d.deleted      = 0
+      AND  NOT EXISTS (
+               SELECT 1
+               FROM   tmp_sku_params_snapshot s
+               WHERE  s.company_id = d.company_id
+                 AND  s.shop_id    = d.shop_id
+                 AND  s.site_code  = d.site_code
+                 AND  s.sku_code   = d.sku_code
+           );
+
+    -- 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS tmp_sku_params_snapshot;
+
+END
+;;
+delimiter ;
+
 SET FOREIGN_KEY_CHECKS = 1;
