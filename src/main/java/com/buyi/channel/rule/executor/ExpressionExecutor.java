@@ -165,7 +165,7 @@ public class ExpressionExecutor implements ChannelRuleExecutor {
     /**
      * 转换为布尔值
      */
-    static boolean toBoolean(Object value) {
+    public static boolean toBoolean(Object value) {
         if (value == null) {
             return false;
         }

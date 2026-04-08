@@ -101,6 +101,9 @@
                     <source>${java.version}</source>
                     <target>${java.version}</target>
                     <encoding>${project.build.sourceEncoding}</encoding>
+                    <excludes>
+                        <exclude>**/ruleengine/service/NewSkuStockupBusiness.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             <plugin>

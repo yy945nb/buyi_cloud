@@ -143,6 +143,15 @@ public class ChannelFlowEngine {
             context.setCurrentRuleCode(step.getRuleCode());
             ChannelRuleResult stepResult = ruleEngine.executeRule(rule, context);
 
+            // SKIPPED rules (e.g., disabled) should not trigger failure
+            if (stepResult.getStatus() == ChannelExecutionStatus.SKIPPED) {
+                // Reset context status to SUCCESS so flow continues
+                context.setSuccess(true);
+                context.setErrorMessage(null);
+                skippedCount++;
+                continue;
+            }
+
             if (!stepResult.isSuccess()) {
                 logger.warn("Step {} failed: {}", step.getStep(), stepResult.getErrorMessage());
 
