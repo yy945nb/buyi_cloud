@@ -46,6 +46,27 @@ CREATE TABLE IF NOT EXISTS `regional_warehouse_binding` (
     INDEX `idx_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='区域仓-仓库绑定关系表';
 
+-- 2.1 区域仓参数配置表
+-- Regional Warehouse Parameters Configuration Table
+CREATE TABLE IF NOT EXISTS `regional_warehouse_params` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `regional_warehouse_id` BIGINT NOT NULL COMMENT '区域仓ID',
+    `regional_warehouse_code` VARCHAR(64) NOT NULL COMMENT '区域仓编码',
+    `safety_stock_days` INT DEFAULT 30 COMMENT '安全库存天数',
+    `stocking_cycle_days` INT DEFAULT 30 COMMENT '备货周期天数',
+    `shipping_days` INT DEFAULT 45 COMMENT '发货天数（海运时间）',
+    `production_days` INT DEFAULT 0 COMMENT '生产天数',
+    `lead_time_days` INT DEFAULT 75 COMMENT '总提前期天数（备货+发货）',
+    `effective_date` DATE NOT NULL COMMENT '生效日期',
+    `expiry_date` DATE DEFAULT '9999-12-31' COMMENT '失效日期',
+    `is_active` TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_params` (`regional_warehouse_id`, `effective_date`),
+    INDEX `idx_regional_warehouse_code` (`regional_warehouse_code`),
+    INDEX `idx_is_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='区域仓参数配置表';
+
 -- 3. 发货单表（用于在途库存统计）
 -- Shipment Order Table (for in-transit inventory calculation)
 CREATE TABLE IF NOT EXISTS `shipment_order` (
@@ -128,6 +149,8 @@ CREATE TABLE IF NOT EXISTS `product_stockout_monitoring` (
     `product_id` BIGINT NOT NULL COMMENT '产品ID',
     `product_sku` VARCHAR(100) NOT NULL COMMENT '产品SKU',
     `product_name` VARCHAR(255) COMMENT '产品名称',
+    `company_id` BIGINT COMMENT '公司ID',
+    `warehouse_id` BIGINT COMMENT '仓库ID（可选，用于仓库级别监控）',
     `regional_warehouse_id` BIGINT NOT NULL COMMENT '区域仓ID',
     `regional_warehouse_code` VARCHAR(64) NOT NULL COMMENT '区域仓编码',
     `business_mode` ENUM('JH_LX', 'FBA') NOT NULL COMMENT '业务模式（JH_LX合并/FBA单独）',
@@ -136,6 +159,8 @@ CREATE TABLE IF NOT EXISTS `product_stockout_monitoring` (
     -- 库存指标
     `overseas_inventory` INT DEFAULT 0 COMMENT '海外仓现有库存',
     `in_transit_inventory` INT DEFAULT 0 COMMENT '在途库存',
+    `domestic_remaining_qty` INT DEFAULT 0 COMMENT '国内仓余单数量',
+    `domestic_actual_stock_qty` INT DEFAULT 0 COMMENT '国内仓实物库存数量',
     `total_inventory` INT DEFAULT 0 COMMENT '总库存（海外+在途）',
     `available_inventory` INT DEFAULT 0 COMMENT '可用库存',
     
@@ -168,6 +193,8 @@ CREATE TABLE IF NOT EXISTS `product_stockout_monitoring` (
     
     UNIQUE KEY `uk_monitoring` (`product_sku`, `regional_warehouse_id`, `business_mode`, `snapshot_date`),
     INDEX `idx_product_id` (`product_id`),
+    INDEX `idx_company_id` (`company_id`),
+    INDEX `idx_warehouse_id` (`warehouse_id`),
     INDEX `idx_regional_warehouse_id` (`regional_warehouse_id`),
     INDEX `idx_business_mode` (`business_mode`),
     INDEX `idx_snapshot_date` (`snapshot_date`),
@@ -223,4 +250,14 @@ VALUES
     (2, 201, 'WH_US_EAST_JH', 'JH', 1, '2024-01-01'),
     (2, 202, 'WH_US_EAST_LX', 'LX', 2, '2024-01-01'),
     (2, 203, 'WH_US_EAST_FBA', 'FBA', 3, '2024-01-01')
+ON DUPLICATE KEY UPDATE `update_time` = CURRENT_TIMESTAMP;
+
+-- 插入区域仓参数配置示例数据
+INSERT INTO `regional_warehouse_params`
+    (`regional_warehouse_id`, `regional_warehouse_code`, `safety_stock_days`, `stocking_cycle_days`, `shipping_days`, `production_days`, `lead_time_days`, `effective_date`)
+VALUES
+    (1, 'RW_US_WEST', 30, 30, 35, 0, 65, '2024-01-01'),
+    (2, 'RW_US_EAST', 30, 30, 50, 0, 80, '2024-01-01'),
+    (3, 'RW_US_CENTRAL', 30, 30, 45, 0, 75, '2024-01-01'),
+    (4, 'RW_US_SOUTH', 30, 30, 48, 0, 78, '2024-01-01')
 ON DUPLICATE KEY UPDATE `update_time` = CURRENT_TIMESTAMP;

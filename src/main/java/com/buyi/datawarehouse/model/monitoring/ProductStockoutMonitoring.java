@@ -28,6 +28,12 @@ public class ProductStockoutMonitoring implements Serializable {
     /** 产品名称 */
     private String productName;
     
+    /** 公司ID */
+    private Long companyId;
+    
+    /** 仓库ID（可选，用于仓库级别监控） */
+    private Long warehouseId;
+    
     /** 区域仓ID */
     private Long regionalWarehouseId;
     
@@ -46,6 +52,12 @@ public class ProductStockoutMonitoring implements Serializable {
     
     /** 在途库存 */
     private Integer inTransitInventory;
+    
+    /** 国内仓余单数量 */
+    private Integer domesticRemainingQty;
+    
+    /** 国内仓实物库存数量 */
+    private Integer domesticActualStockQty;
     
     /** 总库存（海外+在途） */
     private Integer totalInventory;
@@ -107,6 +119,8 @@ public class ProductStockoutMonitoring implements Serializable {
     public ProductStockoutMonitoring() {
         this.overseasInventory = 0;
         this.inTransitInventory = 0;
+        this.domesticRemainingQty = 0;
+        this.domesticActualStockQty = 0;
         this.totalInventory = 0;
         this.availableInventory = 0;
         this.dailyAvgSales = BigDecimal.ZERO;
@@ -212,6 +226,22 @@ public class ProductStockoutMonitoring implements Serializable {
         this.productName = productName;
     }
     
+    public Long getCompanyId() {
+        return companyId;
+    }
+    
+    public void setCompanyId(Long companyId) {
+        this.companyId = companyId;
+    }
+    
+    public Long getWarehouseId() {
+        return warehouseId;
+    }
+    
+    public void setWarehouseId(Long warehouseId) {
+        this.warehouseId = warehouseId;
+    }
+    
     public Long getRegionalWarehouseId() {
         return regionalWarehouseId;
     }
@@ -258,6 +288,22 @@ public class ProductStockoutMonitoring implements Serializable {
     
     public void setInTransitInventory(Integer inTransitInventory) {
         this.inTransitInventory = inTransitInventory;
+    }
+    
+    public Integer getDomesticRemainingQty() {
+        return domesticRemainingQty;
+    }
+    
+    public void setDomesticRemainingQty(Integer domesticRemainingQty) {
+        this.domesticRemainingQty = domesticRemainingQty;
+    }
+    
+    public Integer getDomesticActualStockQty() {
+        return domesticActualStockQty;
+    }
+    
+    public void setDomesticActualStockQty(Integer domesticActualStockQty) {
+        this.domesticActualStockQty = domesticActualStockQty;
     }
     
     public Integer getTotalInventory() {
